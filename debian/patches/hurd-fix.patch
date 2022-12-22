@@ -1,0 +1,19 @@
+Origin-Bug: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=881952
+Description: Fix for MAXHOSTNAMELEN, MAXPATHLEN not present on Hurd
+Author: Alastair McKinstry <mckinstry@debian.org>
+Forwarded: no
+Last-Updated: 2017-11-25
+
+--- a/src/mca/base/pmix_mca_base_var.c
++++ b/src/mca/base/pmix_mca_base_var.c
+@@ -50,6 +50,10 @@
+ #include "src/util/output.h"
+ #include "src/util/pmix_environ.h"
+ 
++#ifndef MAXPATHLEN /* Hurd */
++#define MAXPATHLEN 1024
++#endif
++
+ /*
+  * local variables
+  */

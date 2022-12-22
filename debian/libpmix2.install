@@ -1,0 +1,4 @@
+usr/lib/${DEB_HOST_MULTIARCH}/pmix2/lib/libpmix.so.2*	
+usr/lib/${DEB_HOST_MULTIARCH}/pmix2/share/*
+usr/lib/${DEB_HOST_MULTIARCH}/pmix2/lib/pmix/*
+debian/pmix-mca-params.conf	/usr/lib/${DEB_HOST_MULTIARCH}/pmix2/share

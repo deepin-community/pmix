@@ -1,0 +1,480 @@
+pmix (4.1.1~rc5.1-1+dde) UNRELEASED; urgency=medium
+
+  * update
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 26 Jul 2022 14:40:00 +0800
+
+pmix (4.1.1~rc5.1-1+dde) unstable; urgency=medium
+
+  * Add sunway support.
+
+ -- Miao Changwei <miaochangwei@uniontech.com>  Tue, 19 Apr 2022 14:07:44 +0800
+
+pmix (4.1.1~rc5-1) unstable; urgency=medium
+
+  * New upstream release
+  * Ensure no runpath used in plugins; should be on main path
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Wed, 03 Nov 2021 09:24:27 +0000
+
+pmix (4.1.1~rc4-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Thu, 14 Oct 2021 09:24:22 +0100
+
+pmix (4.1.1~rc2-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 28 Sep 2021 14:26:00 +0100
+
+pmix (4.1.1~rc1-1) unstable; urgency=medium
+
+  * New upstream release
+    - re-enable cython, hurd patches
+  * Build-dep on bison, flex, libfl-dev
+  * Fix link path to LIBDIR/pmix/lib
+  * Update symlinks to libpmix.so.2.5.1
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sun, 26 Sep 2021 19:06:47 +0100
+
+pmix (4.1.0-3) unstable; urgency=medium
+
+  [ Alastair McKinstry ]
+  * Standards-Version: 4.6.0
+  * Drop old hurd.patch (empty)
+
+  [ Gianfranco Costamanga ]
+  * Update breaks/replaces to fix uninstallability (Closes: #991549)
+  *  Drop cython b-d
+  * Move to cython3
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Wed, 18 Aug 2021 15:19:07 +0100
+
+pmix (4.1.0-2) unstable; urgency=medium
+
+  * Push to unstable
+  * Build-dep on cython
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Mon, 16 Aug 2021 14:47:25 +0100
+
+pmix (4.1.0-1) experimental; urgency=medium
+
+  * New upstream release
+  * Include reproducibility patch from Vagrant Cascadian. Closes: #990253
+  * Add libevent-dev, libhwloc-dev and zlib1g-dev to libpmix-dev's Depends
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Thu, 12 Aug 2021 10:24:33 +0100
+
+pmix (4.1.0~rc2-1) experimental; urgency=medium
+
+  * New upstream release
+  * Use chrpath to remove rpaths
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 10 Aug 2021 10:35:57 +0100
+
+pmix (4.1.0~rc1-1) experimental; urgency=medium
+
+  * New upstream release
+  * Update d/watch to handle rc versions better.
+  * Fix prefix to ensure locations correct for pmix.pc
+  * Drop python3.patch; now upstream
+  * Individual DSOs (eg dstore) now merged in libpmix.
+  * Add python3-pmix.install over pyinstall
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Fri, 16 Jul 2021 09:57:50 +0100
+
+pmix (4.0.0-4) unstable; urgency=medium
+
+  * Add Breaks: libopenmpi3 (<< 4.1.0-3) to libpmix2 to get necessary
+    config file when using openmpi. Closes: #978066
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Wed, 20 Jan 2021 17:30:05 +0000
+
+pmix (4.0.0-3) unstable; urgency=medium
+
+  * Regression: ensure pmix-mca-params.conf is installed in share directory
+    to provide correct mca_base_component_path. Closes: #978066, #979744
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 12 Jan 2021 15:11:53 +0000
+
+pmix (4.0.0-2) unstable; urgency=medium
+
+  * Build-Depend on Cython, python3-distuils
+  * python3.patch: change refs from python -> python3
+  * Close bugs fixed in exp release. Closes: #920906, #978066
+  * Revert build to include both shared, static builds
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Fri, 08 Jan 2021 10:15:47 +0000
+
+pmix (4.0.0-1) experimental; urgency=medium
+
+  * New upstream release
+  * Patch merged upstream:
+    - python-bindings.patch
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sat, 02 Jan 2021 08:56:03 +0000
+
+pmix (4.0.0~rc2-1) experimental; urgency=medium
+
+  * New upstream release
+  * Add json, python binding support
+    - Needs python-bindings.patch
+  * Be explicit in optional dependencies
+  * Fix pmix share install path, for help messages
+  * Add build-dep on pandoc for man pages
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sun, 27 Dec 2020 16:40:30 +0000
+
+pmix (4.0.0~rc1-2) unstable; urgency=medium
+
+  * Update d/watch to openmpix github site
+  * Fix broken symlinks (libpmix2.links regression). Closes: #977873
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Wed, 23 Dec 2020 13:11:09 +0000
+
+pmix (4.0.0~rc1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Drop libpmi1, libpmi2 packages
+  * Build-depend on python3
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Mon, 21 Dec 2020 08:01:53 +0000
+
+pmix (3.2.2~rc1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Standards-Version: 4.5.1
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sat, 05 Dec 2020 15:21:44 +0000
+
+pmix (3.2.1-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sat, 14 Nov 2020 09:38:45 +0000
+
+pmix (3.2.1~rc1-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 10 Nov 2020 14:41:28 +0000
+
+pmix (3.2.0-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sun, 25 Oct 2020 15:16:28 +0000
+
+pmix (3.2.0~rc1-6) unstable; urgency=medium
+
+  * Update Breaks/Replaces. Closes: #972442
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Wed, 21 Oct 2020 12:59:48 +0100
+
+pmix (3.2.0~rc1-5) unstable; urgency=medium
+
+  * Add sh4, m69k to the atomic primitives list. Closes: #970314.
+  * Link libmca_common_dstore.so against libpmix. Closes: #934109
+  * Change VCS-Git in d/control to point to debian/latest branch
+  * Move libpmix.so to $libdir/pmix2/lib in libpmix2 ; accessed directly
+    via slurmd, so needed at runtime, not just compile time
+  * Add Breaks/Replaces to cope with above change
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 13 Oct 2020 11:48:48 +0100
+
+pmix (3.2.0~rc1-4) unstable; urgency=medium
+
+  * Drop pandoc, use disable-man-pages until it works ok. Closes: #970205
+  * Close openmpi bug fixde by -3 pmix release. Closes: #970225
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sun, 13 Sep 2020 15:04:38 +0100
+
+pmix (3.2.0~rc1-3) unstable; urgency=medium
+
+  * Fix froim Adrian Bunk for atomic primitives on armel, mipsel
+    Closes: #970194
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sun, 13 Sep 2020 11:59:39 +0100
+
+pmix (3.2.0~rc1-2) unstable; urgency=medium
+
+  * Fix missing headers in patch
+  * Drop erroneous break/relaces 
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 08 Sep 2020 15:30:05 +0100
+
+pmix (3.2.0~rc1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Add libmix-bin package for tools
+  * libpmix2 : the SO version has REGRESSED from libpmix.so.3.2.0 to 
+    libpmix.2.2.30, so revert
+  * Merge $(LIBDIR)/pmix files into $LIBDIR)/pmix2
+  * Move to debhelper 13; use subst. vars rather than autogenerated dh files
+  * Add d/gpb.conf file; use DEP-14 branch names
+  * Include pandoc as a build-dependency
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 08 Sep 2020 08:31:36 +0100
+
+pmix (3.1.5-1) unstable; urgency=medium
+
+  * New upstream release
+  * Update symlinks: libmca_common_dstore.so now 1.0.2
+                     libpmix.so now 2.2.25
+     libpmix.so now 3.2.0
+  * Update package names libpmix2 -> libpmix3
+  * Standards-Version: 4.5.0
+  * sysconfdir now $(LIBDIR)/pmix3/share/ to make libpmix2, libpmix3
+    co-installable
+  * Build with psm2 support on amd64
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Thu, 27 Feb 2020 09:26:17 +0000
+
+pmix (3.1.4-1) unstable; urgency=medium
+
+  * New upstream release
+  * Update symlinks: libmca_common_dstore.so now 1.0.1
+     libpmi.so now 1.0.1
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Wed, 14 Aug 2019 16:09:57 +0100
+
+pmix (3.1.4~rc2-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Thu, 01 Aug 2019 15:07:46 +0100
+
+pmix (3.1.4~rc1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Update symlinks; libpmix now 2.2.24
+  * Standards-Version: 4.4.0
+  * Use debhelper-compat (=12)
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sun, 21 Jul 2019 10:09:03 +0100
+
+pmix (3.1.3-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Thu, 04 Jul 2019 10:38:19 +0100
+
+pmix (3.1.3~rc3-1) unstable; urgency=medium
+
+  * New release
+  * Now use debhelper 12
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 18 Jun 2019 14:14:25 +0100
+
+pmix (3.1.3~rc1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Update symlinks; libpmix.so now .2.2.23
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Wed, 17 Apr 2019 10:11:41 +0100
+
+pmix (3.1.2-3) unstable; urgency=medium
+
+  * DEB_HOST_ARCH -> DEB_TARGET_ARCH in d/rules for cross-build correctness.
+  * Fix broken symlink libmca_common_dstore.so. Closes: #924195
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sun, 10 Mar 2019 10:05:49 +0000
+
+pmix (3.1.2-2) unstable; urgency=medium
+
+  * Bump minor library version libpmix.so.2.2.22. Closes: #920822
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Wed, 30 Jan 2019 09:17:18 +0000
+
+pmix (3.1.2-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 29 Jan 2019 17:17:30 +0000
+
+pmix (3.1.1-1) unstable; urgency=medium
+
+  * New upstream release
+    Minor version now libpmix.so.2.2.21
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sat, 19 Jan 2019 12:33:09 +0000
+
+pmix (3.1.0~rc4-1) unstable; urgency=medium
+
+  * New upstream release.
+    Patches merged upstream:
+    - hurd-mpi-init.patch
+    - 32-bit.patch
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Fri, 11 Jan 2019 09:00:36 +0000
+
+pmix (3.1.0~rc2-3) unstable; urgency=medium
+
+  * Fix for 32-bit system regression. Closes: #918157
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 08 Jan 2019 19:09:48 +0000
+
+pmix (3.1.0~rc2-2) unstable; urgency=medium
+
+  * Standards-Version: 4.3.0
+  * Fix for handle setsockopt(SO_RCVTIMEO) not being supported.
+    Thanks to Samuel Thibault. Closes: #918031
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Thu, 03 Jan 2019 10:09:06 +0000
+
+pmix (3.1.0~rc2-1) unstable; urgency=medium
+
+  * New upstream release
+  * libmca_common_dstore.so now  version 1.0.1
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Mon, 31 Dec 2018 07:36:43 +0000
+
+pmix (3.1.0~rc1-1) experimental; urgency=medium
+
+  * New Upstream release
+  * libpmix.so now at 2.2.20
+  * Also ship libmca_common_dstore.so.0.0.0 in libpmix2
+  * Drop hard-coded xz-compression for deb tarball
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Wed, 24 Oct 2018 10:46:55 +0100
+
+pmix (3.0.2-2) unstable; urgency=medium
+
+  * Fix broken symlink (lib version change). Closes: #910158 
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Wed, 03 Oct 2018 15:22:05 +0100
+
+pmix (3.0.2-1) unstable; urgency=medium
+
+  * New upstream release
+  * Standards-Version: 4.2.1
+
+ -- Alastair McKinstryA <mckinstry@debian.org>  Fri, 21 Sep 2018 09:49:01 +0100
+
+pmix (3.0.1-2) unstable; urgency=medium
+
+  * Add Breaks / Replaces on libopenmpi3 ( << 3.1.2) as it ships a pmix.so
+    we ship. Closes: #907248
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 28 Aug 2018 10:35:18 +0100
+
+pmix (3.0.1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Standards-Version: 4.2.0
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Fri, 24 Aug 2018 08:44:22 +0100
+
+pmix (3.0.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * Standards-Version: 4.1.5
+  * Bup lib versions 2.1.12 -> 2.2.0
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Mon, 09 Jul 2018 14:34:25 +0100
+
+pmix (2.1.2~rc1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Bump library versions 2.1.11 -> 2.1.12
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sat, 30 Jun 2018 08:31:23 +0100
+
+pmix (2.1.2~git.20180629-1) experimental; urgency=medium
+
+  * Upstream snapshot. Testing arm/ppc atomics fixes
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Fri, 29 Jun 2018 13:43:44 +0100
+
+pmix (2.1.1-2) unstable; urgency=medium
+
+  * Drop pkg-openmpi-maintainers as Uploaders. (Uses alioth, deprecated)
+  * Fix watch file to cope with rc versions
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Tue, 22 May 2018 10:00:37 +0100
+
+pmix (2.1.1-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Wed, 16 May 2018 06:56:15 +0100
+
+pmix (2.1.1~rc1-4) unstable; urgency=medium
+
+  * Drop pandoc dependency on all archs; don't ship man pages
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Mon, 30 Apr 2018 10:02:26 +0100
+
+pmix (2.1.1~rc1-3) unstable; urgency=medium
+
+  * Drop dependency on pandoc on some archs to allow build
+  * Disable munge support on hurd-i386
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Mon, 30 Apr 2018 09:23:49 +0100
+
+pmix (2.1.1~rc1-2) unstable; urgency=medium
+
+  * Standards-Version: 4.1.4
+  * Fix broken symlinks. Closes: #895772
+  * Drop obsolete --parallel argument to dh
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Mon, 16 Apr 2018 09:23:29 +0100
+
+pmix (2.1.1~rc1-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sat, 24 Feb 2018 11:43:02 +0000
+
+pmix (2.1.0-2) unstable; urgency=medium
+
+  * Build static libs -fPIC. Needed for openmpi
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sat, 03 Feb 2018 13:44:59 +0000
+
+pmix (2.1.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * Point VCS -Git, browser in d/control to salsa.debian.org
+  * Correct copy-paste error in description. Closes: #882846
+  * Build static libs -fPIC
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sat, 03 Feb 2018 10:48:05 +0000
+
+pmix (2.1.0~rc1-3) unstable; urgency=medium
+
+  * Standards-Version: 4.1.3. No changes required
+  * Now use debhelper 11
+  * Set Vcs-Git in debian/control
+  * Put components in /usr/lib/$(triplet)/pmix where they will be found,
+    not a subdir. See pmix issue 628
+  * flex now needed to build
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Thu, 04 Jan 2018 21:22:16 +0000
+
+pmix (2.1.0~rc1-2) unstable; urgency=medium
+
+  * Move pmix to /usr/lib/$multiarch/pmix/{lib,include} and split libpmi{1,2}
+    libraries to co-exist with SLURM, MPICH implementations.
+    Closes: # 882033
+  * FTBFS on Hurd: add patch for MAXPATHLEN. Closes: #881952
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Sat, 25 Nov 2017 16:25:16 +0000
+
+pmix (2.1.0~rc1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Standards-Version: 4.1.1
+  * Set libpmix-dev as Multi-Arch: same
+  * Add patch for FTBFS on Hurd: #811952
+  * Add watch file
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Fri, 17 Nov 2017 11:16:43 +0000
+
+pmix (2.0.1-1) unstable; urgency=medium
+
+  * Initial release. (Closes: #809345)
+
+ -- Alastair McKinstry <mckinstry@debian.org>  Mon, 18 Sep 2017 15:38:37 +0100

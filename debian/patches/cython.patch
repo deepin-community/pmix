@@ -1,0 +1,22 @@
+--- a/config/pmix.m4
++++ b/config/pmix.m4
+@@ -1282,16 +1282,16 @@
+     if test "$have_cython" = "0"; then
+         AC_MSG_RESULT([yes])
+         AC_MSG_CHECKING([Cython version])
+-        cython_version=`python -c "from Cython.Compiler.Version import version; print(version)"`
++        cython_version=`python3 -c "from Cython.Compiler.Version import version; print(version)"`
+         AC_MSG_RESULT([$cython_version])
+         PMIX_SUMMARY_ADD([[Bindings]],[[Cython]], [pmix_cython], [yes ($cython_version)])
+     else
+         AC_MSG_RESULT([no])
+         # Cython doesn't have any include or lib files - it is just a binary
+-        AC_CHECK_PROG(pmix_cython_rpm, cython, [cython])
++        AC_CHECK_PROG(pmix_cython_rpm, cython3, [cython])
+         if test "$pmix_cython_rpm" != ""; then
+             AC_MSG_CHECKING([Cython version])
+-            cyvers=`cython --version 2>&1`
++            cyvers=`cython3 --version 2>&1`
+             cython_version=${cyvers#"Cython version "}
+             AC_MSG_RESULT([$cython_version])
+             PMIX_SUMMARY_ADD([[Bindings]],[[Cython]], [pmix_cython], [yes ($cython_version)])

@@ -1,0 +1,1 @@
+/usr/lib/${DEB_HOST_MULTIARCH}/pmix2/lib/libpmix.so  /usr/lib/${DEB_HOST_MULTIARCH}/libpmix.so

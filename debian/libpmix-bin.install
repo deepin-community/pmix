@@ -1,0 +1,2 @@
+/usr/lib/*/pmix2/bin/* 	/usr/bin
+# src/tools/wrapper/pmixcc.1	usr/share/man/man1

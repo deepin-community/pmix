@@ -1,0 +1,43 @@
+Description: <add sunway support>
+Author: Miao Changwei <miaochangwei@uniontech.com>
+
+---
+Last-Update: 2022-04-19
+
+--- pmix-4.1.1~rc5.orig/config/from-savannah/upstream-config.guess
++++ pmix-4.1.1~rc5/config/from-savannah/upstream-config.guess
+@@ -1101,6 +1101,9 @@ EOF
+     sparc:Linux:*:* | sparc64:Linux:*:*)
+ 	echo "$UNAME_MACHINE"-unknown-linux-"$LIBC"
+ 	exit ;;
++    sw_64:Linux:*:*)
++	echo "$UNAME_MACHINE"-unknown-linux-"$LIBC"
++	exit ;;
+     tile*:Linux:*:*)
+ 	echo "$UNAME_MACHINE"-unknown-linux-"$LIBC"
+ 	exit ;;
+--- pmix-4.1.1~rc5.orig/config/from-savannah/upstream-config.sub
++++ pmix-4.1.1~rc5/config/from-savannah/upstream-config.sub
+@@ -1241,6 +1241,7 @@ case $cpu-$vendor in
+ 			| sparclite \
+ 			| sparcv8 | sparcv9 | sparcv9b | sparcv9v | sv1 | sx* \
+ 			| spu \
++			| sw_64 \
+ 			| tahoe \
+ 			| thumbv7* \
+ 			| tic30 | tic4x | tic54x | tic55x | tic6x | tic80 \
+--- pmix-4.1.1~rc5.orig/src/include/pmix_portable_platform_real.h
++++ pmix-4.1.1~rc5/src/include/pmix_portable_platform_real.h
+@@ -1031,6 +1031,12 @@
+     #define _PLATFORM_ARCH_32 1
+   #endif
+ 
++#elif defined(__sw_64) || defined(__sw_64__)
++  #define PLATFORM_ARCH_SW64 1
++  #define PLATFORM_ARCH_FAMILYNAME SW64
++  #define _PLATFORM_ARCH_64 1
++  #define _PLATFORM_ARCH_LITTLE_ENDIAN 1
++
+ #else /* unknown CPU */
+   #define PLATFORM_ARCH_UNKNOWN 1
+   #define PLATFORM_ARCH_FAMILYNAME UNKNOWN

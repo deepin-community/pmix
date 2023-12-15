@@ -2,7 +2,7 @@
  * Copyright (c) 2015-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
  *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -27,7 +27,7 @@
 #endif
 #include <time.h>
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include "src/class/pmix_list.h"
 #include "src/hwloc/pmix_hwloc.h"
@@ -36,12 +36,12 @@
 #include "src/mca/base/pmix_mca_base_var.h"
 #include "src/mca/pcompress/pcompress.h"
 #include "src/mca/preg/preg.h"
-#include "src/util/alfg.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/name_fns.h"
-#include "src/util/output.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_alfg.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_name_fns.h"
+#include "src/util/pmix_output.h"
+#include "src/util/pmix_printf.h"
 #include "src/util/pmix_environ.h"
 
 #include "pnet_opa.h"
@@ -233,17 +233,17 @@ static pmix_status_t allocate(pmix_namespace_t *nptr, pmix_info_t info[], size_t
     if (envars) {
         pmix_output_verbose(2, pmix_pnet_base_framework.framework_output,
                             "pnet: opa harvesting envars %s excluding %s",
-                            (NULL == mca_pnet_opa_component.incparms)
+                            (NULL == pmix_mca_pnet_opa_component.incparms)
                                 ? "NONE"
-                                : mca_pnet_opa_component.incparms,
-                            (NULL == mca_pnet_opa_component.excparms)
+                                : pmix_mca_pnet_opa_component.incparms,
+                            (NULL == pmix_mca_pnet_opa_component.excparms)
                                 ? "NONE"
-                                : mca_pnet_opa_component.excparms);
+                                : pmix_mca_pnet_opa_component.excparms);
         /* harvest envars to pass along */
         PMIX_CONSTRUCT(&cache, pmix_list_t);
-        if (NULL != mca_pnet_opa_component.include) {
-            rc = pmix_util_harvest_envars(mca_pnet_opa_component.include,
-                                          mca_pnet_opa_component.exclude, &cache);
+        if (NULL != pmix_mca_pnet_opa_component.include) {
+            rc = pmix_util_harvest_envars(pmix_mca_pnet_opa_component.include,
+                                          pmix_mca_pnet_opa_component.exclude, &cache);
             if (PMIX_SUCCESS != rc) {
                 PMIX_LIST_DESTRUCT(&cache);
                 PMIX_DESTRUCT(&mydata);
@@ -251,8 +251,8 @@ static pmix_status_t allocate(pmix_namespace_t *nptr, pmix_info_t info[], size_t
             }
             /* pack anything that was found */
             PMIX_LIST_FOREACH (kv, &cache, pmix_kval_t) {
-                PMIX_BFROPS_PACK(rc, pmix_globals.mypeer, &mydata, &kv->value->data.envar, 1,
-                                 PMIX_ENVAR);
+                PMIX_BFROPS_PACK(rc, pmix_globals.mypeer, &mydata,
+                                 &kv->value->data.envar, 1, PMIX_ENVAR);
             }
             PMIX_LIST_DESTRUCT(&cache);
         }
@@ -325,10 +325,7 @@ static pmix_status_t setup_local_network(pmix_nspace_env_cache_t *ns,
                 data = (uint8_t *) info[n].value.data.bo.bytes;
                 size = info[n].value.data.bo.size;
             }
-
-            bkt.base_ptr = (char*)data;
-            bkt.unpack_ptr = bkt.base_ptr;
-            bkt.bytes_used = size;
+            PMIX_LOAD_BUFFER_NON_DESTRUCT(pmix_globals.mypeer, &bkt, data, size);
 
             /* all we packed was envars, so just cycle thru */
             ev = PMIX_NEW(pmix_envar_list_item_t);
@@ -337,8 +334,7 @@ static pmix_status_t setup_local_network(pmix_nspace_env_cache_t *ns,
             while (PMIX_SUCCESS == rc) {
                 pmix_list_append(&ns->envars, &ev->super);
                 /* if this is the transport key, save it */
-                if (0 == strncmp(ev->envar.envar, "OMPI_MCA_orte_precondition_transports",
-                               PMIX_MAX_KEYLEN)) {
+                if (0 == strncmp(ev->envar.envar, "OMPI_MCA_orte_precondition_transports", PMIX_MAX_KEYLEN)) {
                     /* add it to the job-level info */
                     PMIX_LOAD_PROCID(&proc, ns->ns->nspace, PMIX_RANK_WILDCARD);
                     PMIX_KVAL_NEW(kv, PMIX_CREDENTIAL);

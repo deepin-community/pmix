@@ -3,7 +3,7 @@
  * Copyright (c) 2004-2007 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2005 The University of Tennessee and The University
+ * Copyright (c) 2004-2023 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2005 High Performance Computing Center Stuttgart,
@@ -15,7 +15,8 @@
  * Copyright (c) 2016      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2018      Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2023      Triad National Security, LLC. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -30,7 +31,7 @@
 #ifndef PMIX_STDINT_H
 #define PMIX_STDINT_H 1
 
-#include "pmix_config.h"
+#include "src/include/pmix_config.h"
 
 /*
  * Include what we can and define what is missing.
@@ -97,7 +98,7 @@ typedef signed long intptr_t;
 typedef unsigned long uintptr_t;
 #    endif
 
-#elif HAVE_LONG_LONG && SIZEOF_VOID_P == SIZEOF_LONG_LONG
+#elif HAVE_LONG_LONG && defined(SIZEOF_LONG_LONG) && SIZEOF_VOID_P == SIZEOF_LONG_LONG
 
 #    ifndef HAVE_INTPTR_T
 typedef signed long long intptr_t;
@@ -120,7 +121,7 @@ typedef unsigned long long uintptr_t;
 #        define PRIsize_t "zu"
 #    elif SIZEOF_SIZE_T == SIZEOF_LONG
 #        define PRIsize_t "lu"
-#    elif SIZEOF_SIZE_T == SIZEOF_LONG_LONG
+#    elif defined(SIZEOF_LONG_LONG) && SIZEOF_SIZE_T == SIZEOF_LONG_LONG
 #        define PRIsize_t "llu"
 #    else
 #        define PRIsize_t "u"

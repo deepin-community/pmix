@@ -2,7 +2,7 @@
  * Copyright (c) 2015-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
  *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -27,7 +27,7 @@
 #endif
 #include <time.h>
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include "src/class/pmix_list.h"
 #include "src/class/pmix_pointer_array.h"
@@ -35,13 +35,13 @@
 #include "src/include/pmix_socket_errno.h"
 #include "src/mca/base/pmix_mca_base_var.h"
 #include "src/mca/preg/preg.h"
-#include "src/util/alfg.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/name_fns.h"
-#include "src/util/output.h"
+#include "src/util/pmix_alfg.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_name_fns.h"
+#include "src/util/pmix_output.h"
 #include "src/util/pmix_environ.h"
-#include "src/util/show_help.h"
+#include "src/util/pmix_show_help.h"
 
 #include "pnet_simptest.h"
 #include "src/mca/pnet/base/base.h"
@@ -135,15 +135,15 @@ static pmix_status_t simptest_init(void)
 
     /* if the configuration was given in a file, then build
      * the topology so we can respond to requests */
-    if (NULL == mca_pnet_simptest_component.configfile) {
+    if (NULL == pmix_mca_pnet_simptest_component.configfile) {
         /* we cannot function */
         return PMIX_ERR_INIT;
     }
 
-    fp = fopen(mca_pnet_simptest_component.configfile, "r");
+    fp = fopen(pmix_mca_pnet_simptest_component.configfile, "r");
     if (NULL == fp) {
         pmix_show_help("help-pnet-simptest.txt", "missing-file", true,
-                       mca_pnet_simptest_component.configfile);
+                       pmix_mca_pnet_simptest_component.configfile);
         return PMIX_ERR_FATAL;
     }
     while (NULL != (line = localgetline(fp))) {
@@ -153,7 +153,7 @@ static pmix_status_t simptest_init(void)
             free(line);
             continue;
         }
-        tmp = pmix_argv_split(line, ' ');
+        tmp = PMIx_Argv_split(line, ' ');
         nd = PMIX_NEW(pnet_node_t);
         nd->name = strdup(tmp[0]);
         pmix_list_append(&mynodes, &nd->super);
@@ -167,7 +167,7 @@ static pmix_status_t simptest_init(void)
         nd->coord.coord = (int *) malloc(nd->coord.dims * sizeof(int));
         memcpy(nd->coord.coord, cache, nd->coord.dims * sizeof(int));
         free(line);
-        pmix_argv_free(tmp);
+        PMIx_Argv_free(tmp);
     }
 
     if (NULL != fp) {
@@ -252,7 +252,7 @@ static pmix_status_t allocate(pmix_namespace_t *nptr, pmix_info_t info[], size_t
      * list of static endpoints on each node */
     for (n = 0; NULL != nodes[n]; n++) {
         /* split the procs for this node */
-        locals = pmix_argv_split(procs[n], ',');
+        locals = PMIx_Argv_split(procs[n], ',');
         if (NULL == locals) {
             /* aren't any on this node */
             continue;
@@ -286,7 +286,7 @@ static pmix_status_t allocate(pmix_namespace_t *nptr, pmix_info_t info[], size_t
         kv->value->type = PMIX_DATA_ARRAY;
         /* for each proc, we will assign an endpt
          * for each NIC on the node */
-        q = pmix_argv_count(locals);
+        q = PMIx_Argv_count(locals);
         PMIX_DATA_ARRAY_CREATE(darray, q, PMIX_INFO);
         kv->value->data.darray = darray;
         iptr = (pmix_info_t *) darray->array;
@@ -315,7 +315,7 @@ static pmix_status_t allocate(pmix_namespace_t *nptr, pmix_info_t info[], size_t
             bptr[0].bytes = strdup(nd->endpt.bytes);
             bptr[0].size = nd->endpt.size;
         }
-        pmix_argv_free(locals);
+        PMIx_Argv_free(locals);
         locals = NULL;
         pmix_list_append(&mylist, &kv->super);
     }
@@ -351,13 +351,13 @@ static pmix_status_t allocate(pmix_namespace_t *nptr, pmix_info_t info[], size_t
 cleanup:
     PMIX_LIST_DESTRUCT(&mylist);
     if (NULL != nodes) {
-        pmix_argv_free(nodes);
+        PMIx_Argv_free(nodes);
     }
     if (NULL != procs) {
-        pmix_argv_free(procs);
+        PMIx_Argv_free(procs);
     }
     if (NULL != locals) {
-        pmix_argv_free(locals);
+        PMIx_Argv_free(locals);
     }
     return rc;
 }

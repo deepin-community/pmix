@@ -12,7 +12,7 @@
  *                         All rights reserved.
  * Copyright (c) 2007      Voltaire All rights reserved.
  * Copyright (c) 2013-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -22,7 +22,7 @@
 
 #include "src/include/pmix_config.h"
 #include "src/class/pmix_list.h"
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 #include "src/include/pmix_globals.h"
 
 /*
@@ -138,9 +138,9 @@ bool pmix_list_insert(pmix_list_t *list, pmix_list_item_t *item, long long idx)
         assert(1 == item->pmix_list_item_refcount);
         item->pmix_list_item_belong_to = list;
 #endif
+        list->pmix_list_length++;
     }
 
-    list->pmix_list_length++;
     return true;
 }
 

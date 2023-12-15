@@ -6,7 +6,7 @@
  * Copyright (c) 2018      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
  *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -16,14 +16,14 @@
 
 #include "src/include/pmix_config.h"
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 #include "src/include/pmix_globals.h"
 
 #include "src/class/pmix_list.h"
 #include "src/mca/preg/preg.h"
 #include "src/server/pmix_server_ops.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
 #include "src/util/pmix_environ.h"
 
 #include "src/mca/pnet/base/base.h"
@@ -108,7 +108,7 @@ pmix_status_t pmix_pnet_base_setup_local_network(char *nspace, pmix_info_t info[
     /* find this proc's nspace object */
     ns = NULL;
     PMIX_LIST_FOREACH (ns2, &pmix_pnet_globals.nspaces, pmix_nspace_env_cache_t) {
-        if PMIX_CHECK_NSPACE(ns2->ns->nspace, nspace) {
+        if (PMIX_CHECK_NSPACE(ns2->ns->nspace, nspace)) {
             ns = ns2;
             break;
         }
@@ -173,7 +173,7 @@ pmix_status_t pmix_pnet_base_setup_fork(const pmix_proc_t *proc, char ***env)
     }
     if (NULL != ns) {
         PMIX_LIST_FOREACH (ev, &ns->envars, pmix_envar_list_item_t) {
-            pmix_setenv(ev->envar.envar, ev->envar.value, true, env);
+            PMIx_Setenv(ev->envar.envar, ev->envar.value, true, env);
         }
     }
 
@@ -247,7 +247,7 @@ void pmix_pnet_base_deregister_nspace(char *nspace)
     /* find this nspace object */
     ns = NULL;
     PMIX_LIST_FOREACH (ns2, &pmix_pnet_globals.nspaces, pmix_nspace_env_cache_t) {
-        if PMIX_CHECK_NSPACE(ns2->ns->nspace, nspace) {
+        if (PMIX_CHECK_NSPACE(ns2->ns->nspace, nspace)) {
             ns = ns2;
             pmix_list_remove_item(&pmix_pnet_globals.nspaces, &ns->super);
             break;
@@ -332,6 +332,7 @@ pmix_status_t pmix_pnet_base_register_fabric(pmix_fabric_t *fabric, const pmix_i
                 }
                 ft->module = active->module;
                 pmix_list_append(&pmix_pnet_globals.fabrics, &ft->super);
+                return rc;
             } else if (PMIX_ERR_TAKE_NEXT_OPTION != rc) {
                 /* just return the result */
                 return rc;

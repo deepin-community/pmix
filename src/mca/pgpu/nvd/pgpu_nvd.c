@@ -2,7 +2,7 @@
  * Copyright (c) 2015-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
  *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -27,7 +27,7 @@
 #endif
 #include <time.h>
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include "src/class/pmix_list.h"
 #include "src/hwloc/pmix_hwloc.h"
@@ -37,10 +37,10 @@
 #include "src/mca/pcompress/pcompress.h"
 #include "src/mca/preg/preg.h"
 #include "src/util/alfg.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/name_fns.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_name_fns.h"
+#include "src/util/pmix_output.h"
 #include "src/util/pmix_environ.h"
 
 #include "pgpu_nvd.h"
@@ -100,15 +100,15 @@ static pmix_status_t allocate(pmix_namespace_t *nptr,
     if (envars) {
         pmix_output_verbose(2, pmix_pgpu_base_framework.framework_output,
                             "pgpu: nvd harvesting envars %s excluding %s",
-                            (NULL == mca_pgpu_nvd_component.incparms)
-                            ? "NONE" : mca_pgpu_nvd_component.incparms,
-                            (NULL == mca_pgpu_nvd_component.excparms)
-                            ? "NONE" : mca_pgpu_nvd_component.excparms);
+                            (NULL == pmix_mca_pgpu_nvd_component.incparms)
+                            ? "NONE" : pmix_mca_pgpu_nvd_component.incparms,
+                            (NULL == pmix_mca_pgpu_nvd_component.excparms)
+                            ? "NONE" : pmix_mca_pgpu_nvd_component.excparms);
         /* harvest envars to pass along */
         PMIX_CONSTRUCT(&cache, pmix_list_t);
-        if (NULL != mca_pgpu_nvd_component.include) {
-            rc = pmix_util_harvest_envars(mca_pgpu_nvd_component.include,
-                                          mca_pgpu_nvd_component.exclude, &cache);
+        if (NULL != pmix_mca_pgpu_nvd_component.include) {
+            rc = pmix_util_harvest_envars(pmix_mca_pgpu_nvd_component.include,
+                                          pmix_mca_pgpu_nvd_component.exclude, &cache);
             if (PMIX_SUCCESS != rc) {
                 PMIX_LIST_DESTRUCT(&cache);
                 PMIX_DESTRUCT(&mydata);
@@ -187,10 +187,7 @@ static pmix_status_t setup_local(pmix_nspace_env_cache_t *ns,
                 data = (uint8_t *) info[n].value.data.bo.bytes;
                 size = info[n].value.data.bo.size;
             }
-
-            bkt.base_ptr = (char*)data;
-            bkt.unpack_ptr = bkt.base_ptr;
-            bkt.bytes_used = size;
+            PMIX_LOAD_BUFFER_NON_DESTRUCT(pmix_globals.mypeer, &bkt, data, size);
 
             /* all we packed was envars, so just cycle thru */
             ev = PMIX_NEW(pmix_envar_list_item_t);

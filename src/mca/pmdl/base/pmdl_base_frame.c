@@ -14,7 +14,7 @@
  * Copyright (c) 2014-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2015-2020 Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -26,14 +26,14 @@
  */
 #include "src/include/pmix_config.h"
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #ifdef HAVE_STRING_H
 #    include <string.h>
 #endif
 
 #include "src/class/pmix_list.h"
-#include "src/mca/base/base.h"
+#include "src/mca/base/pmix_base.h"
 #include "src/mca/base/pmix_mca_base_alias.h"
 #include "src/mca/pmdl/base/base.h"
 
@@ -55,6 +55,7 @@ pmix_pmdl_globals_t pmix_pmdl_globals = {
 
 pmix_pmdl_API_module_t pmix_pmdl = {
     .harvest_envars = pmix_pmdl_base_harvest_envars,
+    .parse_file_envars = pmix_pmdl_base_parse_file_envars,
     .setup_nspace = pmix_pmdl_base_setup_nspace,
     .setup_nspace_kv = pmix_pmdl_base_setup_nspace_kv,
     .register_nspace = pmix_pmdl_base_register_nspace,
@@ -82,7 +83,7 @@ static int pmix_pmdl_register(pmix_mca_base_register_flag_t flags)
      3. However -- at least as currently implemented -- by the time
      individual components are registered, it's too late to make
      aliases.  Hence, if we want to preserve the prior names for
-     some sembalance of backwards compatibility (and we do!), we
+     some semblance of backwards compatibility (and we do!), we
      have to register "ompi" as an "alias for xxx" up here in
      the PMDL base, before any PMDL components are registered.
 
@@ -131,7 +132,7 @@ static pmix_status_t pmix_pmdl_open(pmix_mca_base_open_flag_t flags)
 }
 
 PMIX_MCA_BASE_FRAMEWORK_DECLARE(pmix, pmdl, "PMIx Network Operations", pmix_pmdl_register,
-                                pmix_pmdl_open, pmix_pmdl_close, mca_pmdl_base_static_components,
+                                pmix_pmdl_open, pmix_pmdl_close, pmix_mca_pmdl_base_static_components,
                                 PMIX_MCA_BASE_FRAMEWORK_FLAG_DEFAULT);
 
 PMIX_CLASS_INSTANCE(pmix_pmdl_base_active_module_t, pmix_list_item_t, NULL, NULL);

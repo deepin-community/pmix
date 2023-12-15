@@ -16,7 +16,7 @@
  * Copyright (c) 2016-2019 Mellanox Technologies, Inc.
  *                         All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -32,15 +32,15 @@
 
 #include "bfrop_v12.h"
 #include "internal.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_output.h"
 
 pmix_status_t pmix12_bfrop_pack(pmix_buffer_t *buffer, const void *src, int32_t num_vals,
                                 pmix_data_type_t type)
 {
     pmix_status_t rc;
-    pmix_pointer_array_t *regtypes = &mca_bfrops_v12_component.types;
+    pmix_pointer_array_t *regtypes = &pmix_mca_bfrops_v12_component.types;
 
     /* check for error */
     if (NULL == buffer) {
@@ -107,7 +107,7 @@ pmix_status_t pmix12_bfrop_pack_buffer(pmix_pointer_array_t *regtypes, pmix_buff
 
     /* Lookup the pack function for this type and call it */
 
-    info = (pmix_bfrop_type_info_t *) pmix_pointer_array_get_item(&mca_bfrops_v12_component.types, v1type);
+    info = (pmix_bfrop_type_info_t *) pmix_pointer_array_get_item(&pmix_mca_bfrops_v12_component.types, v1type);
     if (NULL == info) {
         return PMIX_ERR_PACK_FAILURE;
     }
@@ -809,7 +809,7 @@ pmix_status_t pmix12_bfrop_pack_app(pmix_pointer_array_t *regtypes, pmix_buffer_
             return ret;
         }
         /* argv */
-        argc = pmix_argv_count(app[i].argv);
+        argc = PMIx_Argv_count(app[i].argv);
         if (PMIX_SUCCESS != (ret = pmix12_bfrop_pack_int(regtypes, buffer, &argc, 1, PMIX_INT))) {
             return ret;
         }
@@ -821,7 +821,7 @@ pmix_status_t pmix12_bfrop_pack_app(pmix_pointer_array_t *regtypes, pmix_buffer_
             }
         }
         /* env */
-        nvals = pmix_argv_count(app[i].env);
+        nvals = PMIx_Argv_count(app[i].env);
         if (PMIX_SUCCESS
             != (ret = pmix12_bfrop_pack_int32(regtypes, buffer, &nvals, 1, PMIX_INT32))) {
             return ret;

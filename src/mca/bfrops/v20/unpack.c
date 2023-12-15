@@ -16,7 +16,7 @@
  * Copyright (c) 2016-2019 Mellanox Technologies, Inc.
  *                         All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -29,9 +29,9 @@
 #include "bfrop_pmix20.h"
 #include "internal.h"
 #include "src/mca/bfrops/base/base.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_output.h"
 
 pmix_status_t pmix20_bfrop_unpack(pmix_buffer_t *buffer, void *dst, int32_t *num_vals,
                                   pmix_data_type_t type)
@@ -39,7 +39,7 @@ pmix_status_t pmix20_bfrop_unpack(pmix_buffer_t *buffer, void *dst, int32_t *num
     pmix_status_t rc, ret;
     int32_t local_num, n = 1;
     pmix_data_type_t local_type;
-    pmix_pointer_array_t *regtypes = &mca_bfrops_v20_component.types;
+    pmix_pointer_array_t *regtypes = &pmix_mca_bfrops_v20_component.types;
 
     /* check for error */
     if (NULL == buffer || NULL == dst || NULL == num_vals) {
@@ -1130,7 +1130,7 @@ pmix_status_t pmix20_bfrop_unpack_app(pmix_pointer_array_t *regtypes, pmix_buffe
             if (NULL == tmp) {
                 return PMIX_ERROR;
             }
-            pmix_argv_append_nosize(&ptr[i].argv, tmp);
+            PMIx_Argv_append_nosize(&ptr[i].argv, tmp);
             free(tmp);
         }
         /* unpack env */
@@ -1152,7 +1152,7 @@ pmix_status_t pmix20_bfrop_unpack_app(pmix_pointer_array_t *regtypes, pmix_buffe
             if (NULL == tmp) {
                 return PMIX_ERROR;
             }
-            pmix_argv_append_nosize(&ptr[i].env, tmp);
+            PMIx_Argv_append_nosize(&ptr[i].env, tmp);
             free(tmp);
         }
         /* unpack cwd */

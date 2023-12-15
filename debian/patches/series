@@ -1,3 +1,4 @@
 hurd-fix.patch
 cython.patch
-Add-sunway-support.patch
+mca-fix.patch
+configure.patch

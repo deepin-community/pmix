@@ -49,7 +49,7 @@ AC_RUN_IFELSE([AC_LANG_SOURCE([#include <pthread.h>
 #include <stdlib.h>
 
 void *checkpid(void *arg);
-int main() {
+int main(void) {
   pthread_t thr;
   int pid, *retval;
   pid = getpid();
@@ -70,7 +70,7 @@ void *checkpid(void *arg) {
 [tpids_MSG=no PMIX_THREADS_HAVE_DIFFERENT_PIDS=0],
 [tpids_MSG=yes PMIX_THREADS_HAVE_DIFFERENT_PIDS=1],
 [
- # If we're cross compiling, we can't do another AC_* function here beause
+ # If we're cross compiling, we can't do another AC_* function here because
  # it we haven't displayed the result from the last one yet.  So defer
  # another test until below.
  PMIX_THREADS_HAVE_DIFFERENT_PIDS=

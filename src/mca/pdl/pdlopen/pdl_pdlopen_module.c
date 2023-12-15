@@ -5,7 +5,7 @@
  *                         reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
  * Copyright (c) 2016-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -22,10 +22,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 #include "src/mca/pdl/pdl.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
 
 #include "pdl_pdlopen.h"
 
@@ -71,8 +71,8 @@ static int pdlopen_open(const char *fname, bool use_ext, bool private_namespace,
         int i;
         char *ext;
 
-        for (i = 0, ext = mca_pdl_pdlopen_component.filename_suffixes[i]; NULL != ext;
-             ext = mca_pdl_pdlopen_component.filename_suffixes[++i]) {
+        for (i = 0, ext = pmix_mca_pdl_pdlopen_component.filename_suffixes[i]; NULL != ext;
+             ext = pmix_mca_pdl_pdlopen_component.filename_suffixes[++i]) {
             char *name;
 
             rc = asprintf(&name, "%s%s", fname, ext);
@@ -172,7 +172,7 @@ static int pdlopen_foreachfile(const char *search_path,
     char **dirs = NULL;
     char **good_files = NULL;
 
-    dirs = pmix_argv_split(search_path, PMIX_ENV_SEP);
+    dirs = PMIx_Argv_split(search_path, PMIX_ENV_SEP);
     for (int i = 0; NULL != dirs && NULL != dirs[i]; ++i) {
 
         dp = opendir(dirs[i]);
@@ -220,6 +220,12 @@ static int pdlopen_foreachfile(const char *search_path,
                     continue;
                 }
 
+                /* Skip .o files */
+                if (strcmp(ptr, ".o") == 0) {
+                    free(abs_name);
+                    continue;
+                }
+
                 *ptr = '\0';
             }
 
@@ -234,7 +240,7 @@ static int pdlopen_foreachfile(const char *search_path,
             }
 
             if (!found) {
-                pmix_argv_append_nosize(&good_files, abs_name);
+                PMIx_Argv_append_nosize(&good_files, abs_name);
             }
             free(abs_name);
         }
@@ -259,10 +265,10 @@ error:
         closedir(dp);
     }
     if (NULL != dirs) {
-        pmix_argv_free(dirs);
+        PMIx_Argv_free(dirs);
     }
     if (NULL != good_files) {
-        pmix_argv_free(good_files);
+        PMIx_Argv_free(good_files);
     }
 
     return ret;

@@ -2,7 +2,7 @@
  * Copyright (c) 2015-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
  *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -36,14 +36,14 @@
 #include "src/mca/base/pmix_mca_base_var.h"
 #include "src/mca/base/pmix_mca_base_vari.h"
 #include "src/mca/preg/preg.h"
-#include "src/util/alfg.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/name_fns.h"
-#include "src/util/os_path.h"
-#include "src/util/output.h"
+#include "src/util/pmix_alfg.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_name_fns.h"
+#include "src/util/pmix_os_path.h"
+#include "src/util/pmix_output.h"
 #include "src/util/pmix_environ.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_printf.h"
 
 #include "pmdl_oshmem.h"
 #include "src/mca/pmdl/base/base.h"
@@ -57,14 +57,16 @@ static pmix_status_t setup_nspace(pmix_namespace_t *nptr, pmix_info_t *info);
 static pmix_status_t setup_nspace_kv(pmix_namespace_t *nptr, pmix_kval_t *kv);
 static pmix_status_t register_nspace(pmix_namespace_t *nptr);
 static void deregister_nspace(pmix_namespace_t *nptr);
-pmix_pmdl_module_t pmix_pmdl_oshmem_module = {.name = "oshmem",
-                                              .init = oshmem_init,
-                                              .finalize = oshmem_finalize,
-                                              .harvest_envars = harvest_envars,
-                                              .setup_nspace = setup_nspace,
-                                              .setup_nspace_kv = setup_nspace_kv,
-                                              .register_nspace = register_nspace,
-                                              .deregister_nspace = deregister_nspace};
+pmix_pmdl_module_t pmix_pmdl_oshmem_module = {
+    .name = "oshmem",
+    .init = oshmem_init,
+    .finalize = oshmem_finalize,
+    .harvest_envars = harvest_envars,
+    .setup_nspace = setup_nspace,
+    .setup_nspace_kv = setup_nspace_kv,
+    .register_nspace = register_nspace,
+    .deregister_nspace = deregister_nspace
+};
 
 /* internal structures */
 typedef struct {
@@ -118,14 +120,14 @@ static bool checkus(const pmix_info_t info[], size_t ninfo)
         /* check the attribute */
         if (PMIX_CHECK_KEY(&info[n], PMIX_PROGRAMMING_MODEL)
             || PMIX_CHECK_KEY(&info[n], PMIX_PERSONALITY)) {
-            tmp = pmix_argv_split(info[n].value.data.string, ',');
+            tmp = PMIx_Argv_split(info[n].value.data.string, ',');
             for (m = 0; NULL != tmp[m]; m++) {
                 if (0 == strcmp(tmp[m], "oshmem")) {
                     takeus = true;
                     break;
                 }
             }
-            pmix_argv_free(tmp);
+            PMIx_Argv_free(tmp);
         }
     }
 
@@ -156,7 +158,10 @@ static pmix_status_t harvest_envars(pmix_namespace_t *nptr, const pmix_info_t in
         }
     }
     /* flag that we worked on this */
-    pmix_argv_append_nosize(priors, "oshmem");
+    PMIx_Argv_append_nosize(priors, "oshmem");
+
+    pmix_output_verbose(2, pmix_pmdl_base_framework.framework_output,
+                        "pmdl:oshmem:harvest envars active");
 
     /* are we to harvest envars? */
     for (n=0; n < ninfo; n++) {
@@ -186,17 +191,17 @@ harvest:
     }
 
     /* harvest our local envars */
-    if (NULL != mca_pmdl_oshmem_component.include) {
+    if (NULL != pmix_mca_pmdl_oshmem_component.include) {
         pmix_output_verbose(2, pmix_pmdl_base_framework.framework_output,
                             "pmdl: oshmem harvesting envars %s excluding %s",
-                            (NULL == mca_pmdl_oshmem_component.incparms)
+                            (NULL == pmix_mca_pmdl_oshmem_component.incparms)
                                 ? "NONE"
-                                : mca_pmdl_oshmem_component.incparms,
-                            (NULL == mca_pmdl_oshmem_component.excparms)
+                                : pmix_mca_pmdl_oshmem_component.incparms,
+                            (NULL == pmix_mca_pmdl_oshmem_component.excparms)
                                 ? "NONE"
-                                : mca_pmdl_oshmem_component.excparms);
-        rc = pmix_util_harvest_envars(mca_pmdl_oshmem_component.include,
-                                      mca_pmdl_oshmem_component.exclude, ilist);
+                                : pmix_mca_pmdl_oshmem_component.excparms);
+        rc = pmix_util_harvest_envars(pmix_mca_pmdl_oshmem_component.include,
+                                      pmix_mca_pmdl_oshmem_component.exclude, ilist);
         if (PMIX_SUCCESS != rc) {
             return rc;
         }
@@ -248,7 +253,7 @@ static pmix_status_t setup_nspace_kv(pmix_namespace_t *nptr, pmix_kval_t *kv)
 
     /* check the attribute */
     if (PMIX_CHECK_KEY(kv, PMIX_PROGRAMMING_MODEL) || PMIX_CHECK_KEY(kv, PMIX_PERSONALITY)) {
-        tmp = pmix_argv_split(kv->value->data.string, ',');
+        tmp = PMIx_Argv_split(kv->value->data.string, ',');
         for (m = 0; NULL != tmp[m]; m++) {
             if (0 == strcmp(tmp[m], "ompi")) {
                 /* they didn't specify a level, so we will service
@@ -267,7 +272,7 @@ static pmix_status_t setup_nspace_kv(pmix_namespace_t *nptr, pmix_kval_t *kv)
                 break;
             }
         }
-        pmix_argv_free(tmp);
+        PMIx_Argv_free(tmp);
     }
     if (!takeus) {
         return PMIX_ERR_TAKE_NEXT_OPTION;
@@ -380,15 +385,15 @@ static pmix_status_t register_nspace(pmix_namespace_t *nptr)
         }
         kv = (pmix_kval_t *) pmix_list_get_first(&cb.kvs);
         pmix_asprintf(&ev1, "%u", kv->value->data.uint32);
-        pmix_argv_append_nosize(&tmp, ev1);
+        PMIx_Argv_append_nosize(&tmp, ev1);
         free(ev1);
         PMIX_DESTRUCT(&cb);
     }
     PMIX_INFO_DESTRUCT(&info[0]);
 
     if (NULL != tmp) {
-        ev1 = pmix_argv_join(tmp, ' ');
-        pmix_argv_free(tmp);
+        ev1 = PMIx_Argv_join(tmp, ' ');
+        PMIx_Argv_free(tmp);
         PMIX_INFO_LOAD(&info[0], "OMPI_APP_SIZES", ev1, PMIX_STRING);
         free(ev1);
         PMIX_GDS_CACHE_JOB_INFO(rc, pmix_globals.mypeer, nptr, info, 1);
@@ -424,15 +429,15 @@ static pmix_status_t register_nspace(pmix_namespace_t *nptr)
         }
         kv = (pmix_kval_t *) pmix_list_get_first(&cb.kvs);
         pmix_asprintf(&ev1, "%u", kv->value->data.uint32);
-        pmix_argv_append_nosize(&tmp, ev1);
+        PMIx_Argv_append_nosize(&tmp, ev1);
         free(ev1);
         PMIX_DESTRUCT(&cb);
     }
     PMIX_INFO_DESTRUCT(&info[0]);
 
     if (NULL != tmp) {
-        ev1 = pmix_argv_join(tmp, ' ');
-        pmix_argv_free(tmp);
+        ev1 = PMIx_Argv_join(tmp, ' ');
+        PMIx_Argv_free(tmp);
         tmp = NULL;
         PMIX_INFO_LOAD(&info[0], "OMPI_FIRST_RANKS", ev1, PMIX_STRING);
         free(ev1);

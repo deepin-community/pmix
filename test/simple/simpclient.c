@@ -17,7 +17,8 @@
  * Copyright (c) 2015      Mellanox Technologies, Inc.  All rights reserved.
  * Copyright (c) 2019      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting  All rights reserved.
+ * Copyright (c) 2023      Triad National Security, LLC. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -36,8 +37,9 @@
 
 #include "src/class/pmix_object.h"
 #include "src/include/pmix_globals.h"
-#include "src/util/output.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_output.h"
+#include "src/util/pmix_printf.h"
 
 #define MAXCNT 1
 
@@ -212,6 +214,7 @@ int main(int argc, char **argv)
                     myproc.rank, PMIx_Error_string(rc));
         exit(rc);
     }
+    free(tmp);
 
     /* get a list of our local peers */
     if (PMIX_SUCCESS != (rc = PMIx_Get(&proc, PMIX_LOCAL_PEERS, NULL, 0, &val))) {
@@ -220,19 +223,19 @@ int main(int argc, char **argv)
         exit(rc);
     }
     /* split the returned string to get the rank of each local peer */
-    peers = pmix_argv_split(val->data.string, ',');
+    peers = PMIx_Argv_split(val->data.string, ',');
     PMIX_VALUE_RELEASE(val);
-    nlocal = pmix_argv_count(peers);
+    nlocal = PMIx_Argv_count(peers);
     if (nprocs == nlocal) {
         all_local = true;
     } else {
         all_local = false;
-        locals = (pmix_rank_t *) malloc(pmix_argv_count(peers) * sizeof(pmix_rank_t));
+        locals = (pmix_rank_t *) malloc(PMIx_Argv_count(peers) * sizeof(pmix_rank_t));
         for (cnt = 0; NULL != peers[cnt]; cnt++) {
             locals[cnt] = strtoul(peers[cnt], NULL, 10);
         }
     }
-    pmix_argv_free(peers);
+    PMIx_Argv_free(peers);
 
     for (cnt = 0; cnt < MAXCNT; cnt++) {
         pmix_output(0, "Client %s:%d executing loop %d", myproc.nspace, myproc.rank, cnt);
@@ -244,6 +247,7 @@ int main(int argc, char **argv)
                         myproc.rank, PMIx_Error_string(rc));
             exit(rc);
         }
+        free(tmp);
 
         (void) asprintf(&tmp, "%s-%d-remote-%d", myproc.nspace, myproc.rank, cnt);
         value.type = PMIX_STRING;
@@ -253,6 +257,7 @@ int main(int argc, char **argv)
                         myproc.rank, PMIx_Error_string(rc));
             exit(rc);
         }
+        free(tmp);
 
         if (PMIX_SUCCESS != (rc = PMIx_Commit())) {
             pmix_output(0, "Client ns %s rank %d cnt %d: PMIx_Commit failed: %s", myproc.nspace,

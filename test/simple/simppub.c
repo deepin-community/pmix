@@ -15,7 +15,7 @@
  * Copyright (c) 2011      Oak Ridge National Labs.  All rights reserved.
  * Copyright (c) 2013-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2015      Mellanox Technologies, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -34,9 +34,9 @@
 
 #include "src/class/pmix_object.h"
 #include "src/include/pmix_globals.h"
-#include "src/util/argv.h"
-#include "src/util/output.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_output.h"
+#include "src/util/pmix_printf.h"
 
 int main(int argc, char **argv)
 {
@@ -148,8 +148,8 @@ int main(int argc, char **argv)
 
     if (0 == myproc.rank) {
         char **keys = NULL;
-        pmix_argv_append_nosize(&keys, "FOOBAR");
-        pmix_argv_append_nosize(&keys, "PANDA");
+        PMIx_Argv_append_nosize(&keys, "FOOBAR");
+        PMIx_Argv_append_nosize(&keys, "PANDA");
 
         if (PMIX_SUCCESS != (rc = PMIx_Unpublish(keys, NULL, 0))) {
             pmix_output(0, "Client ns %s rank %d: PMIx_Unpublish failed: %d", myproc.nspace,

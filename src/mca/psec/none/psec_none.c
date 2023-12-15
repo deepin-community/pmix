@@ -4,7 +4,7 @@
  * Copyright (c) 2017      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -14,13 +14,13 @@
 
 #include "src/include/pmix_config.h"
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include "src/include/pmix_globals.h"
 #include "src/include/pmix_socket_errno.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_output.h"
 
 #include <unistd.h>
 #ifdef HAVE_SYS_TYPES_H
@@ -86,7 +86,7 @@ static pmix_status_t validate_cred(struct pmix_peer_t *peer, const pmix_info_t d
         for (n = 0; n < ndirs; n++) {
             if (0 == strncmp(directives[n].key, PMIX_CRED_TYPE, PMIX_MAX_KEYLEN)) {
                 /* split the specified string */
-                types = pmix_argv_split(directives[n].value.data.string, ',');
+                types = PMIx_Argv_split(directives[n].value.data.string, ',');
                 takeus = false;
                 for (m = 0; NULL != types[m]; m++) {
                     if (0 == strcmp(types[m], "none")) {
@@ -95,7 +95,7 @@ static pmix_status_t validate_cred(struct pmix_peer_t *peer, const pmix_info_t d
                         break;
                     }
                 }
-                pmix_argv_free(types);
+                PMIx_Argv_free(types);
                 if (!takeus) {
                     return PMIX_ERR_NOT_SUPPORTED;
                 }

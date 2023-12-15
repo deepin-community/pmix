@@ -7,7 +7,7 @@
  * Copyright (c) 2016      Mellanox Technologies, Inc.
  *                         All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -44,9 +44,9 @@
 #include "src/include/pmix_globals.h"
 #include "src/mca/psensor/psensor.h"
 #include "src/server/pmix_server_ops.h"
-#include "src/util/error.h"
-#include "src/util/name_fns.h"
-#include "src/util/show_help.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_name_fns.h"
+#include "src/util/pmix_show_help.h"
 
 #include "src/mca/ptl/base/base.h"
 
@@ -94,7 +94,7 @@ static void lost_connection(pmix_peer_t *peer)
             /* check if the process should be participating in this collective */
             flag = false;
             for (n=0; n < trk->npcs; n++) {
-                if (PMIX_CHECK_PROCID(&trk->pcs[n], &peer->info->pname)) {
+                if (PMIX_CHECK_NAMES(&trk->pcs[n], &peer->info->pname)) {
                     flag = true;
                     break;
                 }
@@ -112,7 +112,7 @@ static void lost_connection(pmix_peer_t *peer)
             PMIX_INFO_LOAD(&trk->info[trk->ninfo-1], PMIX_LOCAL_COLLECTIVE_STATUS, &rc, PMIX_STATUS);
             /* see if it already participated in this tracker */
             PMIX_LIST_FOREACH_SAFE (rinfo, rnext, &trk->local_cbs, pmix_server_caddy_t) {
-                if (!PMIX_CHECK_PROCID(&rinfo->peer->info->pname, &peer->info->pname)) {
+                if (!PMIX_CHECK_NAMES(&rinfo->peer->info->pname, &peer->info->pname)) {
                     continue;
                 }
                 /* remove it from the list */
@@ -218,9 +218,9 @@ static void lost_connection(pmix_peer_t *peer)
             }
         }
 
-    } else {
-        /* if I am a client, there is only
-         * one connection we can have */
+    } else if (peer == pmix_client_globals.myserver) {
+        /* if this was the server to which I am connected,
+         * then we need to exit */
         pmix_globals.connected = false;
         /* it is possible that we have sendrecv's in progress where
          * we are waiting for a response to arrive. Since we have
@@ -379,11 +379,10 @@ exit:
  */
 void pmix_ptl_base_send_handler(int sd, short flags, void *cbdata)
 {
-    (void) sd;
-    (void) flags;
     pmix_peer_t *peer = (pmix_peer_t *) cbdata;
     pmix_ptl_send_t *msg = peer->send_msg;
     pmix_status_t rc;
+    PMIX_HIDE_UNUSED_PARAMS(sd, flags);
 
     /* acquire the object */
     PMIX_ACQUIRE_OBJECT(peer);
@@ -453,13 +452,13 @@ void pmix_ptl_base_send_handler(int sd, short flags, void *cbdata)
 
 void pmix_ptl_base_recv_handler(int sd, short flags, void *cbdata)
 {
-    (void) flags;
     pmix_status_t rc;
     pmix_peer_t *peer = (pmix_peer_t *) cbdata;
     pmix_ptl_recv_t *msg = NULL;
     pmix_ptl_hdr_t hdr;
     size_t nbytes;
     char *ptr;
+    PMIX_HIDE_UNUSED_PARAMS(flags);
 
     /* acquire the object */
     PMIX_ACQUIRE_OBJECT(peer);
@@ -527,7 +526,8 @@ void pmix_ptl_base_recv_handler(int sd, short flags, void *cbdata)
                                     "ptl:base:recv:handler allocate data region of size %lu",
                                     (unsigned long) peer->recv_msg->hdr.nbytes);
                 /* allocate the data region */
-                if (pmix_ptl_base.max_msg_size < peer->recv_msg->hdr.nbytes) {
+                if (0 < pmix_ptl_base.max_msg_size &&
+                    pmix_ptl_base.max_msg_size < peer->recv_msg->hdr.nbytes) {
                     pmix_show_help("help-pmix-runtime.txt", "ptl:msg_size", true,
                                    (unsigned long) peer->recv_msg->hdr.nbytes,
                                    (unsigned long) pmix_ptl_base.max_msg_size);
@@ -616,11 +616,10 @@ err_close:
 
 void pmix_ptl_base_send(int sd, short args, void *cbdata)
 {
-    (void) sd;
-    (void) args;
     pmix_ptl_queue_t *queue = (pmix_ptl_queue_t *) cbdata;
     pmix_ptl_send_t *snd;
     pmix_ptl_recv_t *msg;
+    PMIX_HIDE_UNUSED_PARAMS(sd, args);
 
     /* acquire the object */
     PMIX_ACQUIRE_OBJECT(queue);
@@ -704,13 +703,12 @@ void pmix_ptl_base_send(int sd, short args, void *cbdata)
 
 void pmix_ptl_base_send_recv(int fd, short args, void *cbdata)
 {
-    (void) fd;
-    (void) args;
     pmix_ptl_sr_t *ms = (pmix_ptl_sr_t *) cbdata;
     pmix_ptl_posted_recv_t *req;
     pmix_ptl_send_t *snd;
     uint32_t tag;
     pmix_ptl_recv_t *msg;
+    PMIX_HIDE_UNUSED_PARAMS(fd, args);
 
     /* acquire the object */
     PMIX_ACQUIRE_OBJECT(ms);
@@ -753,7 +751,7 @@ void pmix_ptl_base_send_recv(int fd, short args, void *cbdata)
     }
 
     pmix_output_verbose(2, pmix_ptl_base_framework.framework_output,
-                        "QUEING MSG TO SERVER %s ON SOCKET %d OF SIZE %d",
+                        "QUEUEING MSG TO SERVER %s ON SOCKET %d OF SIZE %d",
                         PMIX_PNAME_PRINT(&ms->peer->info->pname), ms->peer->sd,
                         (int) ms->bfr->bytes_used);
 
@@ -804,11 +802,10 @@ void pmix_ptl_base_send_recv(int fd, short args, void *cbdata)
 
 void pmix_ptl_base_process_msg(int fd, short flags, void *cbdata)
 {
-    (void) fd;
-    (void) flags;
     pmix_ptl_recv_t *msg = (pmix_ptl_recv_t *) cbdata;
     pmix_ptl_posted_recv_t *rcv;
     pmix_buffer_t buf;
+    PMIX_HIDE_UNUSED_PARAMS(fd, flags);
 
     /* acquire the object */
     PMIX_ACQUIRE_OBJECT(msg);
@@ -836,8 +833,9 @@ void pmix_ptl_base_process_msg(int fd, short flags, void *cbdata)
                 }
                 msg->data = NULL; // protect the data region
                 pmix_output_verbose(5, pmix_ptl_base_framework.framework_output,
-                                    "%s:%d EXECUTE CALLBACK for tag %u", pmix_globals.myid.nspace,
-                                    pmix_globals.myid.rank, msg->hdr.tag);
+                                    "%s:%d EXECUTE CALLBACK for tag %u with %d bytes",
+                                    pmix_globals.myid.nspace, pmix_globals.myid.rank,
+                                    msg->hdr.tag, (int)msg->hdr.nbytes);
                 rcv->cbfunc(msg->peer, &msg->hdr, &buf, rcv->cbdata);
                 pmix_output_verbose(5, pmix_ptl_base_framework.framework_output,
                                     "%s:%d CALLBACK COMPLETE", pmix_globals.myid.nspace,

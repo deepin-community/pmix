@@ -2,7 +2,7 @@
  * Copyright (c) 2004-2007 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2008 The University of Tennessee and The University
+ * Copyright (c) 2004-2022 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2005 High Performance Computing Center Stuttgart,
@@ -21,7 +21,7 @@
  * Copyright (c) 2017      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -38,7 +38,7 @@
  * to set the affinity of that new child process according to a
  * complex series of rules.  This binding may fail in a myriad of
  * different ways.  A lot of this code deals with reporting that error
- * occurately to the end user.  This is a complex task in itself
+ * accurately to the end user.  This is a complex task in itself
  * because the child process is not "really" an PMIX process -- all
  * error reporting must be proxied up to the parent who can use normal
  * PMIX error reporting mechanisms.
@@ -71,7 +71,7 @@
 
 #include "pmix_config.h"
 #include "pmix.h"
-#include "src/include/types.h"
+#include "src/include/pmix_types.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -112,14 +112,14 @@
 #include <ctype.h>
 
 #include "src/class/pmix_pointer_array.h"
-#include "src/util/error.h"
-#include "src/util/fd.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_fd.h"
 #include "src/util/pmix_environ.h"
-#include "src/util/show_help.h"
+#include "src/util/pmix_show_help.h"
 
 #include "src/include/pmix_globals.h"
-#include "src/threads/threads.h"
-#include "src/util/name_fns.h"
+#include "src/threads/pmix_threads.h"
+#include "src/util/pmix_name_fns.h"
 
 #include "src/mca/pfexec/base/base.h"
 #include "src/mca/pfexec/linux/pfexec_linux.h"
@@ -175,15 +175,15 @@ static pmix_status_t sigproc(pid_t pd, int signum)
 
     if (0 != kill(pid, signum)) {
         if (ESRCH != errno) {
-            PMIX_OUTPUT_VERBOSE((2, pmix_pfexec_base_framework.framework_output,
+            pmix_output_verbose(2, pmix_pfexec_base_framework.framework_output,
                                  "%s pfexec:linux:SENT SIGNAL %d TO PID %d GOT ERRNO %d",
-                                 PMIX_NAME_PRINT(&pmix_globals.myid), signum, (int) pid, errno));
+                                 PMIX_NAME_PRINT(&pmix_globals.myid), signum, (int) pid, errno);
             return errno;
         }
     }
-    PMIX_OUTPUT_VERBOSE((2, pmix_pfexec_base_framework.framework_output,
+    pmix_output_verbose(2, pmix_pfexec_base_framework.framework_output,
                          "%s pfexec:linux:SENT SIGNAL %d TO PID %d SUCCESS",
-                         PMIX_NAME_PRINT(&pmix_globals.myid), signum, (int) pid));
+                         PMIX_NAME_PRINT(&pmix_globals.myid), signum, (int) pid);
     return 0;
 }
 
@@ -301,7 +301,11 @@ static void send_error_show_help(int fd, int exit_status, const char *file, cons
    the pipe up to the parent, and the keepalive pipe. */
 static int close_open_file_descriptors(int write_fd, int keepalive)
 {
+#if defined(__OSX__)
+    DIR *dir = opendir("/dev/fd");
+#else  /* Linux */
     DIR *dir = opendir("/proc/self/fd");
+#endif  /* defined(__OSX__) */
     if (NULL == dir) {
         return PMIX_ERR_FILE_OPEN_FAILURE;
     }
@@ -393,7 +397,7 @@ static void do_child(pmix_app_t *app, char **env, pmix_pfexec_child_t *child, in
     set_handler_linux(SIGCHLD);
 
     /* Unblock all signals, for many of the same reasons that we
-       set the default handlers, above.  This is noticable on
+       set the default handlers, above.  This is noticeable on
        Linux where the event library blocks SIGTERM, but we don't
        want that blocked by the launched process. */
     sigprocmask(0, 0, &sigs);
@@ -566,6 +570,62 @@ static int fork_proc(pmix_app_t *app, pmix_pfexec_child_t *child, char **env)
     return do_parent(app, child, p[0]);
 }
 
+/* callback from the event library whenever a SIGCHLD is received */
+static void wait_signal_callback(int fd, short event, void *arg)
+{
+    (void) fd;
+    (void) event;
+    pmix_event_t *signal = (pmix_event_t *) arg;
+    int status;
+    pid_t pid;
+    pmix_pfexec_child_t *child;
+
+    PMIX_ACQUIRE_OBJECT(signal);
+
+    if (SIGCHLD != PMIX_EVENT_SIGNAL(signal)) {
+        return;
+    }
+    /* if we haven't spawned anyone, then ignore this */
+    if (0 == pmix_list_get_size(&pmix_pfexec_globals.children)) {
+        return;
+    }
+
+    /* reap all queued waitpids until we
+     * don't get anything valid back */
+    while (1) {
+        pid = waitpid(-1, &status, WNOHANG);
+        if (-1 == pid && EINTR == errno) {
+            /* try it again */
+            continue;
+        }
+        /* if we got garbage, then nothing we can do */
+        if (pid <= 0) {
+            return;
+        }
+
+        /* we are already in an event, so it is safe to access globals */
+        PMIX_LIST_FOREACH (child, &pmix_pfexec_globals.children, pmix_pfexec_child_t) {
+            if (pid == child->pid) {
+                /* record the exit status */
+                if (WIFEXITED(status)) {
+                    child->exitcode = WEXITSTATUS(status);
+                } else {
+                    if (WIFSIGNALED(status)) {
+                        child->exitcode = WTERMSIG(status) + 128;
+                    }
+                }
+                /* mark the child as complete */
+                child->completed = true;
+                if ((NULL == child->stdoutev || !child->stdoutev->active)
+                    && (NULL == child->stderrev || !child->stderrev->active)) {
+                    PMIX_PFEXEC_CHK_COMPLETE(child);
+                }
+                break;
+            }
+        }
+    }
+}
+
 /**
  * Launch all processes allocated to the current node.
  */
@@ -573,8 +633,31 @@ static int fork_proc(pmix_app_t *app, pmix_pfexec_child_t *child, char **env)
 static pmix_status_t spawn_job(const pmix_info_t job_info[], size_t ninfo, const pmix_app_t apps[],
                                size_t napps, pmix_spawn_cbfunc_t cbfunc, void *cbdata)
 {
-    pmix_output_verbose(5, pmix_pfexec_base_framework.framework_output,
+     sigset_t unblock;
+
+     pmix_output_verbose(5, pmix_pfexec_base_framework.framework_output,
                         "%s pfexec:linux spawning child job", PMIX_NAME_PRINT(&pmix_globals.myid));
+
+    if (NULL == pmix_pfexec_globals.handler) {
+        /* ensure that SIGCHLD is unblocked as we need to capture it */
+        if (0 != sigemptyset(&unblock)) {
+            return PMIX_ERROR;
+        }
+        if (0 != sigaddset(&unblock, SIGCHLD)) {
+            return PMIX_ERROR;
+        }
+        if (0 != sigprocmask(SIG_UNBLOCK, &unblock, NULL)) {
+            return PMIX_ERR_NOT_SUPPORTED;
+        }
+
+        /* set to catch SIGCHLD events */
+        pmix_pfexec_globals.handler = (pmix_event_t *) malloc(sizeof(pmix_event_t));
+        pmix_event_set(pmix_globals.evauxbase, pmix_pfexec_globals.handler, SIGCHLD,
+                       PMIX_EV_SIGNAL | PMIX_EV_PERSIST, wait_signal_callback,
+                       pmix_pfexec_globals.handler);
+        pmix_pfexec_globals.active = true;
+        pmix_event_add(pmix_pfexec_globals.handler, NULL);
+    }
 
     PMIX_PFEXEC_SPAWN(job_info, ninfo, apps, napps, fork_proc, cbfunc, cbdata);
 

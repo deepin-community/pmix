@@ -17,7 +17,7 @@
  * Copyright (c) 2015-2018 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -29,7 +29,7 @@
 #include "src/include/pmix_config.h"
 #include "include/pmix_server.h"
 #include "src/include/pmix_globals.h"
-#include "src/include/types.h"
+#include "src/include/pmix_types.h"
 
 #include <errno.h>
 #include <signal.h>
@@ -41,10 +41,10 @@
 #include <unistd.h>
 
 #include "src/class/pmix_list.h"
-#include "src/util/argv.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_output.h"
 #include "src/util/pmix_environ.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_printf.h"
 
 #include "simptest.h"
 
@@ -245,7 +245,7 @@ int main(int argc, char **argv)
                 istimeouttest = true;
             }
             for (k = n + 2; NULL != argv[k]; k++) {
-                pmix_argv_append_nosize(&client_argv, argv[k]);
+                PMIx_Argv_append_nosize(&client_argv, argv[k]);
             }
             n += k;
         } else if ((0 == strcmp("-reps", argv[n]) || 0 == strcmp("--reps", argv[n]))
@@ -351,19 +351,19 @@ int main(int argc, char **argv)
         atmp = NULL;
         for (n = 0; n < nprocs; n++) {
             asprintf(&tmp, "%d", n);
-            pmix_argv_append_nosize(&atmp, tmp);
+            PMIx_Argv_append_nosize(&atmp, tmp);
             free(tmp);
         }
-        tmp = pmix_argv_join(atmp, ',');
-        pmix_argv_free(atmp);
+        tmp = PMIx_Argv_join(atmp, ',');
+        PMIx_Argv_free(atmp);
         asprintf(&nspace, "foobar%d", m);
         pmix_strncpy(proc.nspace, nspace, PMIX_MAX_NSLEN);
         x = PMIX_NEW(myxfer_t);
         set_namespace(nprocs, tmp, nspace, opcbfunc, x);
 
         /* set common argv and env */
-        client_env = pmix_argv_copy(environ);
-        pmix_argv_prepend_nosize(&client_argv, executable);
+        client_env = PMIx_Argv_copy(environ);
+        PMIx_Argv_prepend_nosize(&client_argv, executable);
 
         wakeup = nprocs;
         myuid = getuid();
@@ -411,9 +411,9 @@ int main(int argc, char **argv)
                 exit(0);
             }
         }
-        pmix_argv_free(client_argv);
+        PMIx_Argv_free(client_argv);
         client_argv = NULL;
-        pmix_argv_free(client_env);
+        PMIx_Argv_free(client_env);
         client_env = NULL;
 
         /* hang around until the client(s) finalize */
@@ -784,7 +784,7 @@ static pmix_status_t publish_fn(const pmix_proc_t *proc, const pmix_info_t info[
         pmix_strncpy(p->pdata.proc.nspace, proc->nspace, PMIX_MAX_NSLEN);
         p->pdata.proc.rank = proc->rank;
         pmix_strncpy(p->pdata.key, info[n].key, PMIX_MAX_KEYLEN);
-        pmix_value_xfer(&p->pdata.value, (pmix_value_t *) &info[n].value);
+        PMIx_Value_xfer(&p->pdata.value, (pmix_value_t *) &info[n].value);
         pmix_list_append(&pubdata, &p->super);
     }
     if (NULL != cbfunc) {
@@ -812,7 +812,7 @@ static pmix_status_t lookup_fn(const pmix_proc_t *proc, char **keys, const pmix_
                 pmix_strncpy(p2->pdata.proc.nspace, p->pdata.proc.nspace, PMIX_MAX_NSLEN);
                 p2->pdata.proc.rank = p->pdata.proc.rank;
                 pmix_strncpy(p2->pdata.key, p->pdata.key, PMIX_MAX_KEYLEN);
-                pmix_value_xfer(&p2->pdata.value, &p->pdata.value);
+                PMIx_Value_xfer(&p2->pdata.value, &p->pdata.value);
                 pmix_list_append(&results, &p2->super);
                 break;
             }
@@ -827,7 +827,7 @@ static pmix_status_t lookup_fn(const pmix_proc_t *proc, char **keys, const pmix_
                 pmix_strncpy(pd[i].proc.nspace, p->pdata.proc.nspace, PMIX_MAX_NSLEN);
                 pd[i].proc.rank = p->pdata.proc.rank;
                 pmix_strncpy(pd[i].key, p->pdata.key, PMIX_MAX_KEYLEN);
-                pmix_value_xfer(&pd[i].value, &p->pdata.value);
+                PMIx_Value_xfer(&pd[i].value, &p->pdata.value);
             }
         }
     }

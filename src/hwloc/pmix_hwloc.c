@@ -5,8 +5,8 @@
  *                         All rights reserved.
  * Copyright (c) 2018      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
- *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2022      Triad National Security, LLC. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -40,7 +40,7 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 
-#include PMIX_HWLOC_HEADER
+#include <hwloc.h>
 
 #include "src/class/pmix_list.h"
 #include "src/client/pmix_client_ops.h"
@@ -48,14 +48,16 @@
 #include "src/mca/bfrops/base/base.h"
 #include "src/mca/pnet/pnet.h"
 #include "src/server/pmix_server_ops.h"
-#include "src/util/error.h"
-#include "src/util/fd.h"
-#include "src/util/name_fns.h"
-#include "src/util/path.h"
-#include "src/util/printf.h"
-#include "src/util/show_help.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_fd.h"
+#include "src/util/pmix_name_fns.h"
+#include "src/util/pmix_path.h"
+#include "src/util/pmix_printf.h"
+#include "src/util/pmix_show_help.h"
+#include "src/util/pmix_vmem.h"
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include "pmix_hwloc.h"
 #if HWLOC_API_VERSION >= 0x20000
@@ -65,7 +67,7 @@
 static bool topo_in_shmem = false;
 static bool passed_thru = false;
 static char *vmhole = "biggest";
-static pmix_hwloc_vm_hole_kind_t hole_kind = VM_HOLE_BIGGEST;
+static pmix_vmem_hole_kind_t hole_kind = VMEM_HOLE_BIGGEST;
 static char *topo_file = NULL;
 static char *testcpuset = NULL;
 static int pmix_hwloc_output = -1;
@@ -79,11 +81,6 @@ static int shmemfd = -1;
 static bool space_available = false;
 static uint64_t amount_space_avail = 0;
 
-static int parse_map_line(const char *line, unsigned long *beginp, unsigned long *endp,
-                          pmix_hwloc_vm_map_kind_t *kindp);
-static int use_hole(unsigned long holebegin, unsigned long holesize, unsigned long *addrp,
-                    unsigned long size);
-static int find_hole(pmix_hwloc_vm_hole_kind_t hkind, size_t *addrp, size_t size);
 static int enough_space(const char *filename, size_t space_req, uint64_t *space_avail,
                         bool *result);
 #endif
@@ -101,34 +98,30 @@ pmix_status_t pmix_hwloc_register(void)
 {
     (void) pmix_mca_base_var_register("pmix", "pmix", "hwloc", "verbose",
                                       "Verbosity for HWLOC operations",
-                                      PMIX_MCA_BASE_VAR_TYPE_INT, NULL, 0,
-                                      PMIX_MCA_BASE_VAR_FLAG_NONE, PMIX_INFO_LVL_1,
-                                      PMIX_MCA_BASE_VAR_SCOPE_ALL,
+                                      PMIX_MCA_BASE_VAR_TYPE_INT,
                                       &pmix_hwloc_verbose);
     if (0 < pmix_hwloc_verbose) {
         /* set default output */
-        pmix_hwloc_verbose = pmix_output_open(NULL);
-        pmix_output_set_verbosity(pmix_hwloc_verbose, pmix_hwloc_verbose);
+        pmix_hwloc_output = pmix_output_open(NULL);
+        pmix_output_set_verbosity(pmix_hwloc_output, pmix_hwloc_verbose);
     }
 
     vmhole = "biggest";
     (void) pmix_mca_base_var_register("pmix", "pmix", "hwloc", "hole_kind",
                                       "Kind of VM hole to identify - none, begin, biggest, libs, heap, stack (default=biggest)",
-                                      PMIX_MCA_BASE_VAR_TYPE_STRING, NULL, 0,
-                                      PMIX_MCA_BASE_VAR_FLAG_NONE, PMIX_INFO_LVL_9,
-                                      PMIX_MCA_BASE_VAR_SCOPE_READONLY, &vmhole);
+                                      PMIX_MCA_BASE_VAR_TYPE_STRING, &vmhole);
     if (0 == strcasecmp(vmhole, "none")) {
-        hole_kind = VM_HOLE_NONE;
+        hole_kind = VMEM_HOLE_NONE;
     } else if (0 == strcasecmp(vmhole, "begin")) {
-        hole_kind = VM_HOLE_BEGIN;
+        hole_kind = VMEM_HOLE_BEGIN;
     } else if (0 == strcasecmp(vmhole, "biggest")) {
-        hole_kind = VM_HOLE_BIGGEST;
+        hole_kind = VMEM_HOLE_BIGGEST;
     } else if (0 == strcasecmp(vmhole, "libs")) {
-        hole_kind = VM_HOLE_IN_LIBS;
+        hole_kind = VMEM_HOLE_IN_LIBS;
     } else if (0 == strcasecmp(vmhole, "heap")) {
-        hole_kind = VM_HOLE_AFTER_HEAP;
+        hole_kind = VMEM_HOLE_AFTER_HEAP;
     } else if (0 == strcasecmp(vmhole, "stack")) {
-        hole_kind = VM_HOLE_BEFORE_STACK;
+        hole_kind = VMEM_HOLE_BEFORE_STACK;
     } else {
         pmix_output(0, "INVALID VM HOLE TYPE");
         return PMIX_ERROR;
@@ -136,14 +129,11 @@ pmix_status_t pmix_hwloc_register(void)
 
     (void) pmix_mca_base_var_register("pmix", "pmix", "hwloc", "topo_file",
                                       "Topology file to use instead of discovering it (mostly for testing purposes)",
-                                      PMIX_MCA_BASE_VAR_TYPE_STRING, NULL, 0, PMIX_MCA_BASE_VAR_FLAG_NONE, PMIX_INFO_LVL_9,
-                                      PMIX_MCA_BASE_VAR_SCOPE_READONLY, &topo_file);
+                                      PMIX_MCA_BASE_VAR_TYPE_STRING, &topo_file);
 
     (void) pmix_mca_base_var_register("pmix", "pmix", "hwloc", "test_cpuset",
                                       "Cpuset for testing purposes",
-                                      PMIX_MCA_BASE_VAR_TYPE_STRING, NULL, 0,
-                                      PMIX_MCA_BASE_VAR_FLAG_NONE, PMIX_INFO_LVL_9,
-                                      PMIX_MCA_BASE_VAR_SCOPE_READONLY,
+                                      PMIX_MCA_BASE_VAR_TYPE_STRING,
                                       &testcpuset);
 
     return PMIX_SUCCESS;
@@ -174,7 +164,8 @@ pmix_status_t pmix_hwloc_setup_topology(pmix_info_t *info, size_t ninfo)
     char *xmlbuffer = NULL;
     int len;
     size_t n;
-    pmix_kval_t *kv;
+    pmix_kval_t kv, *kptr;
+    pmix_value_t val;
     bool share = false;
     bool found_dep = false;
     bool found_new = false;
@@ -219,11 +210,11 @@ pmix_status_t pmix_hwloc_setup_topology(pmix_info_t *info, size_t ninfo)
         pmix_output_verbose(2, pmix_hwloc_output,
                             "%s:%s topology externally provided", __FILE__, __func__);
         /* record locally in case someone does a PMIx_Get to retrieve it */
-        PMIX_KVAL_NEW(kv, PMIX_TOPOLOGY2);
-        kv->value->type = PMIX_TOPO;
-        kv->value->data.topo = &pmix_globals.topology;
-        PMIX_GDS_STORE_KV(rc, pmix_globals.mypeer, &pmix_globals.myid, PMIX_INTERNAL, kv);
-        PMIX_RELEASE(kv);
+        kv.key = PMIX_TOPOLOGY2;
+        kv.value = &val;
+        val.type = PMIX_TOPO;
+        val.data.topo = &pmix_globals.topology;
+        PMIX_GDS_STORE_KV(rc, pmix_globals.mypeer, &pmix_globals.myid, PMIX_INTERNAL, &kv);
         pmix_output_verbose(2, pmix_hwloc_output, "%s:%s stored", __FILE__, __func__);
         if (PMIX_SUCCESS != rc) {
             return rc;
@@ -300,11 +291,11 @@ pmix_status_t pmix_hwloc_setup_topology(pmix_info_t *info, size_t ninfo)
         pmix_globals.topology.source = strdup("hwloc");
 #    endif
         /* record locally in case someone does a PMIx_Get to retrieve it */
-        PMIX_KVAL_NEW(kv, PMIX_TOPOLOGY2);
-        kv->value->type = PMIX_TOPO;
-        kv->value->data.topo = &pmix_globals.topology;
-        PMIX_GDS_STORE_KV(rc, pmix_globals.mypeer, &pmix_globals.myid, PMIX_INTERNAL, kv);
-        PMIX_RELEASE(kv);
+        kv.key = PMIX_TOPOLOGY2;
+        kv.value = &val;
+        val.type = PMIX_TOPO;
+        val.data.topo = &pmix_globals.topology;
+        PMIX_GDS_STORE_KV(rc, pmix_globals.mypeer, &pmix_globals.myid, PMIX_INTERNAL, &kv);
         pmix_output_verbose(2, pmix_hwloc_output, "%s:%s stored", __FILE__,
                             __func__);
         topo_in_shmem = true;
@@ -328,33 +319,40 @@ tryxml:
     PMIX_GDS_FETCH_KV(rc, pmix_client_globals.myserver, &cb);
     if (PMIX_SUCCESS == rc) {
         file = popstr(&cb);
-        rc = load_xml(file);
-        free(file);
+        if (NULL == file) {
+            rc = PMIX_ERR_NOT_FOUND;
+        } else {
+            rc = load_xml(file);
+            free(file);
+        }
         cb.key = NULL;
         PMIX_DESTRUCT(&cb);
-        if (PMIX_SUCCESS == rc) {
-            pmix_output_verbose(2, pmix_hwloc_output,
-                                "%s:%s v2 xml adopted", __FILE__, __func__);
-            /* record locally in case someone does a PMIx_Get to retrieve it */
-            PMIX_KVAL_NEW(kv, PMIX_TOPOLOGY2);
-            kv->value->type = PMIX_TOPO;
-            kv->value->data.topo = &pmix_globals.topology;
-            PMIX_GDS_STORE_KV(rc, pmix_globals.mypeer, &pmix_globals.myid, PMIX_INTERNAL, kv);
-            PMIX_RELEASE(kv);
-            pmix_output_verbose(2, pmix_hwloc_output, "%s:%s stored",
-                                __FILE__, __func__);
-            if (PMIX_SUCCESS != rc) {
-                PMIX_ERROR_LOG(rc);
-            }
-            if (share) {
-                goto sharetopo;
-            }
+        if (PMIX_SUCCESS != rc) {
+            goto tryv1;
+        }
+
+        pmix_output_verbose(2, pmix_hwloc_output,
+                            "%s:%s v2 xml adopted", __FILE__, __func__);
+        /* record locally in case someone does a PMIx_Get to retrieve it */
+        kv.key = PMIX_TOPOLOGY2;
+        kv.value = &val;
+        val.type = PMIX_TOPO;
+        val.data.topo = &pmix_globals.topology;
+        PMIX_GDS_STORE_KV(rc, pmix_globals.mypeer, &pmix_globals.myid, PMIX_INTERNAL, &kv);
+        pmix_output_verbose(2, pmix_hwloc_output, "%s:%s stored",
+                            __FILE__, __func__);
+        if (PMIX_SUCCESS != rc) {
+            PMIX_ERROR_LOG(rc);
+        }
+        if (share) {
+            goto sharetopo;
         }
         return rc;
     }
 
 #endif
 
+tryv1:
     /* try to get the v1 XML string */
     pmix_output_verbose(2, pmix_hwloc_output,
                         "%s:%s checking v1 xml",
@@ -366,35 +364,38 @@ tryxml:
     PMIX_GDS_FETCH_KV(rc, pmix_client_globals.myserver, &cb);
     if (PMIX_SUCCESS == rc) {
         file = popstr(&cb);
-        rc = load_xml(file);
-        free(file);
+        if (NULL == file) {
+            rc = PMIX_ERR_NOT_FOUND;
+        } else {
+            rc = load_xml(file);
+            free(file);
+        }
         cb.key = NULL;
         PMIX_DESTRUCT(&cb);
-        if (PMIX_SUCCESS == rc) {
-            pmix_output_verbose(2, pmix_hwloc_output,
-                                "%s:%s v1 xml adopted", __FILE__, __func__);
+        if (PMIX_SUCCESS != rc) {
+            goto tryself;
+        }
+        pmix_output_verbose(2, pmix_hwloc_output,
+                            "%s:%s v1 xml adopted", __FILE__, __func__);
 
-            /* record locally in case someone does a PMIx_Get to retrieve it */
-            PMIX_KVAL_NEW(kv, PMIX_TOPOLOGY2);
-            kv->value->type = PMIX_TOPO;
-            kv->value->data.topo = &pmix_globals.topology;
-            PMIX_GDS_STORE_KV(rc, pmix_globals.mypeer, &pmix_globals.myid, PMIX_INTERNAL, kv);
-            PMIX_RELEASE(kv);
-            pmix_output_verbose(2, pmix_hwloc_output, "%s:%s stored",
-                                __FILE__, __func__);
-            if (PMIX_SUCCESS != rc) {
-                PMIX_ERROR_LOG(rc);
-            }
-            if (share) {
-                goto sharetopo;
-            }
+        /* record locally in case someone does a PMIx_Get to retrieve it */
+        kv.key = PMIX_TOPOLOGY2;
+        kv.value = &val;
+        val.type = PMIX_TOPO;
+        val.data.topo = &pmix_globals.topology;
+        PMIX_GDS_STORE_KV(rc, pmix_globals.mypeer, &pmix_globals.myid, PMIX_INTERNAL, &kv);
+        pmix_output_verbose(2, pmix_hwloc_output, "%s:%s stored",
+                            __FILE__, __func__);
+        if (PMIX_SUCCESS != rc) {
+            PMIX_ERROR_LOG(rc);
+        }
+        if (share) {
+            goto sharetopo;
         }
         return rc;
     }
 
-#if HWLOC_API_VERSION >= 0x20000
 tryself:
-#endif
     /* did they give us one to use? */
     if (NULL != topo_file) {
         pmix_output_verbose(2, pmix_hwloc_output,
@@ -447,12 +448,13 @@ tryself:
                             "%s:%s discovery complete - source %s", __FILE__, __func__,
                             pmix_globals.topology.source);
     }
+
     /* record locally in case someone does a PMIx_Get to retrieve it */
-    PMIX_KVAL_NEW(kv, PMIX_TOPOLOGY2);
-    kv->value->type = PMIX_TOPO;
-    kv->value->data.topo = &pmix_globals.topology;
-    PMIX_GDS_STORE_KV(rc, pmix_globals.mypeer, &pmix_globals.myid, PMIX_INTERNAL, kv);
-    PMIX_RELEASE(kv);
+    kv.key = PMIX_TOPOLOGY2;
+    kv.value = &val;
+    val.type = PMIX_TOPO;
+    val.data.topo = &pmix_globals.topology;
+    PMIX_GDS_STORE_KV(rc, pmix_globals.mypeer, &pmix_globals.myid, PMIX_INTERNAL, &kv);
     pmix_output_verbose(2, pmix_hwloc_output, "%s:%s stored", __FILE__,
                         __func__);
 
@@ -477,17 +479,17 @@ sharetopo:
         pmix_output_verbose(2, pmix_hwloc_output,
                             "%s:%s export v1 xml",
                             __FILE__, __func__);
-        kv = PMIX_NEW(pmix_kval_t);
-        kv->key = strdup(PMIX_HWLOC_XML_V1);
-        kv->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
-        PMIX_VALUE_LOAD(kv->value, xmlbuffer, PMIX_STRING);
-        pmix_list_append(&pmix_server_globals.gdata, &kv->super);
+        kptr = PMIX_NEW(pmix_kval_t);
+        kptr->key = strdup(PMIX_HWLOC_XML_V1);
+        kptr->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
+        PMIX_VALUE_LOAD(kptr->value, xmlbuffer, PMIX_STRING);
+        pmix_list_append(&pmix_server_globals.gdata, &kptr->super);
         /* save it with the deprecated key for older RMs */
-        kv = PMIX_NEW(pmix_kval_t);
-        kv->key = strdup(PMIX_LOCAL_TOPO);
-        kv->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
-        PMIX_VALUE_LOAD(kv->value, xmlbuffer, PMIX_STRING);
-        pmix_list_append(&pmix_server_globals.gdata, &kv->super);
+        kptr = PMIX_NEW(pmix_kval_t);
+        kptr->key = strdup(PMIX_LOCAL_TOPO);
+        kptr->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
+        PMIX_VALUE_LOAD(kptr->value, xmlbuffer, PMIX_STRING);
+        pmix_list_append(&pmix_server_globals.gdata, &kptr->super);
         /* done with the buffer */
         hwloc_free_xmlbuffer(pmix_globals.topology.topology, xmlbuffer);
     }
@@ -498,17 +500,17 @@ sharetopo:
     if (0 == hwloc_topology_export_xmlbuffer(pmix_globals.topology.topology, &xmlbuffer, &len, 0)) {
         pmix_output_verbose(2, pmix_hwloc_output, "%s:%s export v2 xml",
                             __FILE__, __func__);
-        kv = PMIX_NEW(pmix_kval_t);
-        kv->key = strdup(PMIX_HWLOC_XML_V2);
-        kv->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
-        PMIX_VALUE_LOAD(kv->value, xmlbuffer, PMIX_STRING);
-        pmix_list_append(&pmix_server_globals.gdata, &kv->super);
+        kptr = PMIX_NEW(pmix_kval_t);
+        kptr->key = strdup(PMIX_HWLOC_XML_V2);
+        kptr->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
+        PMIX_VALUE_LOAD(kptr->value, xmlbuffer, PMIX_STRING);
+        pmix_list_append(&pmix_server_globals.gdata, &kptr->super);
         /* save it with the deprecated key for older RMs */
-        kv = PMIX_NEW(pmix_kval_t);
-        kv->key = strdup(PMIX_LOCAL_TOPO);
-        kv->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
-        PMIX_VALUE_LOAD(kv->value, xmlbuffer, PMIX_STRING);
-        pmix_list_append(&pmix_server_globals.gdata, &kv->super);
+        kptr = PMIX_NEW(pmix_kval_t);
+        kptr->key = strdup(PMIX_LOCAL_TOPO);
+        kptr->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
+        PMIX_VALUE_LOAD(kptr->value, xmlbuffer, PMIX_STRING);
+        pmix_list_append(&pmix_server_globals.gdata, &kptr->super);
         hwloc_free_xmlbuffer(pmix_globals.topology.topology, xmlbuffer);
     }
     /* and as a v1 xml string, should an older client attach */
@@ -516,18 +518,18 @@ sharetopo:
                                              HWLOC_TOPOLOGY_EXPORT_XML_FLAG_V1)) {
         pmix_output_verbose(2, pmix_hwloc_output, "%s:%s export v1 xml",
                             __FILE__, __func__);
-        kv = PMIX_NEW(pmix_kval_t);
-        kv->key = strdup(PMIX_HWLOC_XML_V1);
-        kv->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
-        PMIX_VALUE_LOAD(kv->value, xmlbuffer, PMIX_STRING);
+        kptr = PMIX_NEW(pmix_kval_t);
+        kptr->key = strdup(PMIX_HWLOC_XML_V1);
+        kptr->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
+        PMIX_VALUE_LOAD(kptr->value, xmlbuffer, PMIX_STRING);
         hwloc_free_xmlbuffer(pmix_globals.topology.topology, xmlbuffer);
-        pmix_list_append(&pmix_server_globals.gdata, &kv->super);
+        pmix_list_append(&pmix_server_globals.gdata, &kptr->super);
         /* cannot support the deprecated PMIX_LOCAL_TOPO key here as it would
          * overwrite the HWLOC v2 string */
     }
 
     /* if they specified no shared memory, then we are done */
-    if (VM_HOLE_NONE == hole_kind) {
+    if (VMEM_HOLE_NONE == hole_kind) {
         pmix_output_verbose(2, pmix_hwloc_output,
                             "%s:%s no shmem requested", __FILE__, __func__);
         return PMIX_SUCCESS;
@@ -542,7 +544,7 @@ sharetopo:
     }
 
     /* try and find a hole */
-    if (PMIX_SUCCESS != find_hole(hole_kind, &shmemaddr, shmemsize)) {
+    if (PMIX_SUCCESS != pmix_vmem_find_hole(hole_kind, &shmemaddr, shmemsize)) {
         /* we couldn't find a hole, so don't use the shmem support */
         if (4 < pmix_output_get_verbosity(pmix_hwloc_output)) {
             print_maps();
@@ -604,23 +606,23 @@ sharetopo:
 
     /* add the requisite key-values to the global data to be
      * given to each client for older PMIx versions */
-    kv = PMIX_NEW(pmix_kval_t);
-    kv->key = strdup(PMIX_HWLOC_SHMEM_FILE);
-    kv->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
-    PMIX_VALUE_LOAD(kv->value, shmemfile, PMIX_STRING);
-    pmix_list_append(&pmix_server_globals.gdata, &kv->super);
+    kptr = PMIX_NEW(pmix_kval_t);
+    kptr->key = strdup(PMIX_HWLOC_SHMEM_FILE);
+    kptr->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
+    PMIX_VALUE_LOAD(kptr->value, shmemfile, PMIX_STRING);
+    pmix_list_append(&pmix_server_globals.gdata, &kptr->super);
 
-    kv = PMIX_NEW(pmix_kval_t);
-    kv->key = strdup(PMIX_HWLOC_SHMEM_ADDR);
-    kv->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
-    PMIX_VALUE_LOAD(kv->value, &shmemaddr, PMIX_SIZE);
-    pmix_list_append(&pmix_server_globals.gdata, &kv->super);
+    kptr = PMIX_NEW(pmix_kval_t);
+    kptr->key = strdup(PMIX_HWLOC_SHMEM_ADDR);
+    kptr->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
+    PMIX_VALUE_LOAD(kptr->value, &shmemaddr, PMIX_SIZE);
+    pmix_list_append(&pmix_server_globals.gdata, &kptr->super);
 
-    kv = PMIX_NEW(pmix_kval_t);
-    kv->key = strdup(PMIX_HWLOC_SHMEM_SIZE);
-    kv->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
-    PMIX_VALUE_LOAD(kv->value, &shmemsize, PMIX_SIZE);
-    pmix_list_append(&pmix_server_globals.gdata, &kv->super);
+    kptr = PMIX_NEW(pmix_kval_t);
+    kptr->key = strdup(PMIX_HWLOC_SHMEM_SIZE);
+    kptr->value = (pmix_value_t *) malloc(sizeof(pmix_value_t));
+    PMIX_VALUE_LOAD(kptr->value, &shmemsize, PMIX_SIZE);
+    pmix_list_append(&pmix_server_globals.gdata, &kptr->super);
 
 #endif
 
@@ -784,7 +786,7 @@ pmix_status_t pmix_hwloc_generate_locality_string(const pmix_cpuset_t *cpuset, c
         /* get the object type at this depth */
         type = hwloc_get_depth_type(pmix_globals.topology.topology, d);
         /* if it isn't one of interest, then ignore it */
-        if (HWLOC_OBJ_NODE != type && HWLOC_OBJ_PACKAGE != type &&
+        if (HWLOC_OBJ_NUMANODE != type && HWLOC_OBJ_PACKAGE != type &&
 #if HWLOC_API_VERSION < 0x20000
             HWLOC_OBJ_CACHE != type &&
 #else
@@ -803,7 +805,7 @@ pmix_status_t pmix_hwloc_generate_locality_string(const pmix_cpuset_t *cpuset, c
         if (!hwloc_bitmap_iszero(result)) {
             hwloc_bitmap_list_asprintf(&tmp, result);
             switch (type) {
-                case HWLOC_OBJ_NODE:
+                case HWLOC_OBJ_NUMANODE:
                     pmix_asprintf(&t2, "%sNM%s:", (NULL == locality) ? "" : locality, tmp);
                     if (NULL != locality) {
                         free(locality);
@@ -939,8 +941,8 @@ pmix_status_t pmix_hwloc_get_relative_locality(const char *locality1,
     /* start with what we know - they share a node */
     locality = PMIX_LOCALITY_SHARE_NODE;
 
-    set1 = pmix_argv_split(loc1, ':');
-    set2 = pmix_argv_split(loc2, ':');
+    set1 = PMIx_Argv_split(loc1, ':');
+    set2 = PMIx_Argv_split(loc2, ':');
     bit1 = hwloc_bitmap_alloc();
     bit2 = hwloc_bitmap_alloc();
 
@@ -980,8 +982,8 @@ pmix_status_t pmix_hwloc_get_relative_locality(const char *locality1,
             }
         }
     }
-    pmix_argv_free(set1);
-    pmix_argv_free(set2);
+    PMIx_Argv_free(set1);
+    PMIx_Argv_free(set2);
     hwloc_bitmap_free(bit1);
     hwloc_bitmap_free(bit2);
     *loc = locality;
@@ -1012,7 +1014,7 @@ pmix_status_t pmix_hwloc_get_cpuset(pmix_cpuset_t *cpuset, pmix_bind_envelope_t 
     }
     if (0 != rc) {
         hwloc_bitmap_free(cpuset->bitmap);
-        return PMIX_ERR_TAKE_NEXT_OPTION;
+        return PMIX_ERR_NOT_FOUND;
     }
     if (NULL == cpuset->source) {
         cpuset->source = strdup("hwloc");
@@ -1146,7 +1148,7 @@ pmix_status_t pmix_hwloc_compute_distances(pmix_topology_t *topo, pmix_cpuset_t 
             if (PMIX_CHECK_KEY(&info[n], PMIX_DEVICE_TYPE)) {
                 type |= info[n].value.data.devtype;
             } else if (PMIX_CHECK_KEY(&info[n], PMIX_DEVICE_ID)) {
-                pmix_argv_append_nosize(&devids, info[n].value.data.string);
+                PMIx_Argv_append_nosize(&devids, info[n].value.data.string);
             }
         }
     }
@@ -1544,193 +1546,6 @@ static int get_locality_string_by_depth(int d, hwloc_cpuset_t cpuset, hwloc_cpus
 }
 
 #if HWLOC_API_VERSION >= 0x20000
-
-static int parse_map_line(const char *line, unsigned long *beginp, unsigned long *endp,
-                          pmix_hwloc_vm_map_kind_t *kindp)
-{
-    const char *tmp = line, *next;
-    unsigned long value;
-
-    /* "beginaddr-endaddr " */
-    value = strtoull(tmp, (char **) &next, 16);
-    if (next == tmp) {
-        return PMIX_ERROR;
-    }
-
-    *beginp = (unsigned long) value;
-
-    if (*next != '-') {
-        return PMIX_ERROR;
-    }
-
-    tmp = next + 1;
-
-    value = strtoull(tmp, (char **) &next, 16);
-    if (next == tmp) {
-        return PMIX_ERROR;
-    }
-    *endp = (unsigned long) value;
-    tmp = next;
-
-    if (*next != ' ') {
-        return PMIX_ERROR;
-    }
-    tmp = next + 1;
-
-    /* look for ending absolute path */
-    next = strchr(tmp, '/');
-    if (next) {
-        *kindp = VM_MAP_FILE;
-    } else {
-        /* look for ending special tag [foo] */
-        next = strchr(tmp, '[');
-        if (next) {
-            if (!strncmp(next, "[heap]", 6)) {
-                *kindp = VM_MAP_HEAP;
-            } else if (!strncmp(next, "[stack]", 7)) {
-                *kindp = VM_MAP_STACK;
-            } else {
-                char *end;
-                if ((end = strchr(next, '\n')) != NULL) {
-                    *end = '\0';
-                }
-                *kindp = VM_MAP_OTHER;
-            }
-        } else {
-            *kindp = VM_MAP_ANONYMOUS;
-        }
-    }
-
-    return PMIX_SUCCESS;
-}
-
-#    define ALIGN2MB  (2 * 1024 * 1024UL)
-#    define ALIGN64MB (64 * 1024 * 1024UL)
-
-static int use_hole(unsigned long holebegin, unsigned long holesize, unsigned long *addrp,
-                    unsigned long size)
-{
-    unsigned long aligned;
-    unsigned long middle = holebegin + holesize / 2;
-
-    if (holesize < size) {
-        return PMIX_ERROR;
-    }
-
-    /* try to align the middle of the hole on 64MB for POWER's 64k-page PMD */
-    aligned = (middle + ALIGN64MB) & ~(ALIGN64MB - 1);
-    if (aligned + size <= holebegin + holesize) {
-        *addrp = aligned;
-        return PMIX_SUCCESS;
-    }
-
-    /* try to align the middle of the hole on 2MB for x86 PMD */
-    aligned = (middle + ALIGN2MB) & ~(ALIGN2MB - 1);
-    if (aligned + size <= holebegin + holesize) {
-        *addrp = aligned;
-        return PMIX_SUCCESS;
-    }
-
-    /* just use the end of the hole */
-    *addrp = holebegin + holesize - size;
-    return PMIX_SUCCESS;
-}
-
-static int find_hole(pmix_hwloc_vm_hole_kind_t hkind, size_t *addrp, size_t size)
-{
-    unsigned long biggestbegin = 0;
-    unsigned long biggestsize = 0;
-    unsigned long prevend = 0;
-    pmix_hwloc_vm_map_kind_t prevmkind = VM_MAP_OTHER;
-    int in_libs = 0;
-    FILE *file;
-    char line[96];
-
-    file = fopen("/proc/self/maps", "r");
-    if (!file) {
-        return PMIX_ERROR;
-    }
-
-    while (fgets(line, sizeof(line), file) != NULL) {
-        unsigned long begin = 0, end = 0;
-        pmix_hwloc_vm_map_kind_t mkind = VM_MAP_OTHER;
-
-        if (!parse_map_line(line, &begin, &end, &mkind)) {
-            switch (hkind) {
-                case VM_HOLE_BEGIN:
-                    fclose(file);
-                    return use_hole(0, begin, addrp, size);
-
-                case VM_HOLE_AFTER_HEAP:
-                    if (prevmkind == VM_MAP_HEAP && mkind != VM_MAP_HEAP) {
-                        /* only use HEAP when there's no other HEAP after it
-                         * (there can be several of them consecutively).
-                         */
-                        fclose(file);
-                        return use_hole(prevend, begin - prevend, addrp, size);
-                    }
-                    break;
-
-                case VM_HOLE_BEFORE_STACK:
-                    if (mkind == VM_MAP_STACK) {
-                        fclose(file);
-                        return use_hole(prevend, begin - prevend, addrp, size);
-                    }
-                    break;
-
-                case VM_HOLE_IN_LIBS:
-                    /* see if we are between heap and stack */
-                    if (prevmkind == VM_MAP_HEAP) {
-                        in_libs = 1;
-                    }
-                    if (mkind == VM_MAP_STACK) {
-                        in_libs = 0;
-                    }
-                    if (!in_libs) {
-                        /* we're not in libs, ignore this entry */
-                        break;
-                    }
-                    /* we're in libs, consider this entry for searching the biggest hole below */
-                    /* fallthrough */
-
-                case VM_HOLE_BIGGEST:
-                    if (begin - prevend > biggestsize) {
-                        biggestbegin = prevend;
-                        biggestsize = begin - prevend;
-                    }
-                    break;
-
-                default:
-                    assert(0);
-            }
-        }
-
-        while (!strchr(line, '\n')) {
-            if (!fgets(line, sizeof(line), file)) {
-                goto done;
-            }
-        }
-
-        if (mkind == VM_MAP_STACK) {
-            /* Don't go beyond the stack. Other VMAs are special (vsyscall, vvar, vdso, etc),
-             * There's no spare room there. And vsyscall is even above the userspace limit.
-             */
-            break;
-        }
-
-        prevend = end;
-        prevmkind = mkind;
-    }
-
-done:
-    fclose(file);
-    if (hkind == VM_HOLE_IN_LIBS || hkind == VM_HOLE_BIGGEST) {
-        return use_hole(biggestbegin, biggestsize, addrp, size);
-    }
-
-    return PMIX_ERROR;
-}
-
 static int enough_space(const char *filename, size_t space_req, uint64_t *space_avail, bool *result)
 {
     uint64_t avail = 0;

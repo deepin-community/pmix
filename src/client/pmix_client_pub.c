@@ -8,7 +8,7 @@
  * Copyright (c) 2016      Mellanox Technologies, Inc.
  *                         All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -43,15 +43,15 @@
 #ifdef HAVE_SYS_TYPES_H
 #    include <sys/types.h>
 #endif
-#include PMIX_EVENT_HEADER
+#include <event.h>
 
 #include "src/class/pmix_list.h"
 #include "src/mca/bfrops/bfrops.h"
 #include "src/mca/ptl/ptl.h"
-#include "src/threads/threads.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/output.h"
+#include "src/threads/pmix_threads.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_output.h"
 
 #include "pmix_client_ops.h"
 
@@ -214,7 +214,7 @@ PMIX_EXPORT pmix_status_t PMIx_Lookup(pmix_pdata_t pdata[], size_t ndata, const 
     /* transfer the pdata keys to the keys argv array */
     for (i = 0; i < ndata; i++) {
         if ('\0' != pdata[i].key[0]) {
-            pmix_argv_append_nosize(&keys, pdata[i].key);
+            PMIx_Argv_append_nosize(&keys, pdata[i].key);
         }
     }
 
@@ -227,7 +227,7 @@ PMIX_EXPORT pmix_status_t PMIx_Lookup(pmix_pdata_t pdata[], size_t ndata, const 
 
     if (PMIX_SUCCESS != (rc = PMIx_Lookup_nb(keys, info, ninfo, lookup_cbfunc, cb))) {
         PMIX_RELEASE(cb);
-        pmix_argv_free(keys);
+        PMIx_Argv_free(keys);
         return rc;
     }
 
@@ -288,7 +288,7 @@ PMIX_EXPORT pmix_status_t PMIx_Lookup_nb(char **keys, const pmix_info_t info[], 
         return rc;
     }
     /* pack the keys */
-    nkeys = pmix_argv_count(keys);
+    nkeys = PMIx_Argv_count(keys);
     PMIX_BFROPS_PACK(rc, pmix_client_globals.myserver, msg, &nkeys, 1, PMIX_SIZE);
     if (PMIX_SUCCESS != rc) {
         PMIX_ERROR_LOG(rc);
@@ -422,7 +422,7 @@ PMIX_EXPORT pmix_status_t PMIx_Unpublish_nb(char **keys, const pmix_info_t info[
         return rc;
     }
     /* pack the number of keys */
-    i = pmix_argv_count(keys);
+    i = PMIx_Argv_count(keys);
     PMIX_BFROPS_PACK(rc, pmix_client_globals.myserver, msg, &i, 1, PMIX_SIZE);
     if (PMIX_SUCCESS != rc) {
         PMIX_ERROR_LOG(rc);

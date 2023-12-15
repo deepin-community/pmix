@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+#
+# Copyright (c) 2022      Nanook Consulting. All rights reserved
 
 import os, os.path, sys, shutil, signal
 from optparse import OptionParser, OptionGroup
@@ -44,6 +46,8 @@ def harvest_constants(options, src, constants, definitions):
         myline = line.strip()
         # remove comment lines
         if "/*" in myline or "*/" in myline or myline.startswith("*"):
+            if "DUPLICATES" in myline:
+                break
             n += 1
             continue
         # if the line starts with #define, then we want it
@@ -515,6 +519,10 @@ def main():
     definitions.write("\n\n")
     constants.write("\n\n")
     harvest_constants(options, "pmix_tool.h", constants, definitions)
+    # add some space
+    definitions.write("\n\n")
+    constants.write("\n\n")
+    harvest_constants(options, "pmix_deprecated.h", constants, definitions)
     # close the files to ensure all output is written
     constants.close()
     definitions.close()

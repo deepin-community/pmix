@@ -15,7 +15,7 @@
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -24,7 +24,7 @@
  */
 
 #include "pmix_config.h"
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 /* This component will only be compiled on Linux, where we are
    guaranteed to have <unistd.h> and friends */
@@ -44,8 +44,8 @@
 
 #include "pstat_linux.h"
 #include "src/include/pmix_globals.h"
-#include "src/util/argv.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_printf.h"
 
 /*
  * API functions
@@ -427,8 +427,8 @@ static int query(pid_t pid, pmix_proc_stats_t *stats, pmix_node_stats_t *nstats)
             if (NULL == fields) {
                 continue;
             }
-            if (14 < pmix_argv_count(fields)) {
-                pmix_argv_free(fields);
+            if (14 < PMIx_Argv_count(fields)) {
+                PMIx_Argv_free(fields);
                 continue;
             }
             /* pack the ones of interest into the struct */
@@ -446,7 +446,7 @@ static int query(pid_t pid, pmix_proc_stats_t *stats, pmix_node_stats_t *nstats)
             ds->dstat.milliseconds_io = strtoul(fields[12], NULL, 10);
             ds->dstat.weighted_milliseconds_io = strtoul(fields[13], NULL, 10);
             pmix_list_append(&cache, &ds->super);
-            pmix_argv_free(fields);
+            PMIx_Argv_free(fields);
         }
         fclose(fp);
         if (0 < (len = pmix_list_get_size(&cache))) {
@@ -495,7 +495,7 @@ static int query(pid_t pid, pmix_proc_stats_t *stats, pmix_node_stats_t *nstats)
             ns->nstat.num_packets_sent = strtoul(fields[9], NULL, 10);
             ns->nstat.num_send_errs = strtoul(fields[10], NULL, 10);
             pmix_list_append(&cache, &ns->super);
-            pmix_argv_free(fields);
+            PMIx_Argv_free(fields);
         }
         fclose(fp);
         if (0 < (len = pmix_list_get_size(&cache))) {
@@ -574,7 +574,7 @@ static void local_getfields(char *dptr, char ***fields)
     }
 
     /* working from this point, find the end of each
-     * alpha-numeric field and store it on the stack.
+     * alphanumeric field and store it on the stack.
      * Then shift across the white space to the start
      * of the next one
      */
@@ -588,7 +588,7 @@ static void local_getfields(char *dptr, char ***fields)
         /* terminate it */
         *end = '\0';
         /* store it on the stack */
-        pmix_argv_append_nosize(fields, ptr);
+        PMIx_Argv_append_nosize(fields, ptr);
         /* step across any white space */
         end++;
         while ('\0' != *end && !isalnum(*end)) {
@@ -603,6 +603,6 @@ static void local_getfields(char *dptr, char ***fields)
     }
     if (NULL != ptr) {
         /* have a hanging field */
-        pmix_argv_append_nosize(fields, ptr);
+        PMIx_Argv_append_nosize(fields, ptr);
     }
 }

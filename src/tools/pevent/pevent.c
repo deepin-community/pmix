@@ -15,7 +15,7 @@
  * Copyright (c) 2011      Oak Ridge National Labs.  All rights reserved.
  * Copyright (c) 2013-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2015      Mellanox Technologies, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -25,7 +25,7 @@
  */
 
 #include "pmix_config.h"
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include <pthread.h>
 #include <stdio.h>
@@ -34,13 +34,14 @@
 #include <unistd.h>
 
 #include "include/pmix_tool.h"
-#include "src/mca/base/base.h"
+#include "src/mca/base/pmix_base.h"
 #include "src/mca/pinstalldirs/base/base.h"
 #include "src/runtime/pmix_rte.h"
-#include "src/threads/threads.h"
-#include "src/util/cmd_line.h"
-#include "src/util/keyval_parse.h"
-#include "src/util/show_help.h"
+#include "src/threads/pmix_threads.h"
+#include "src/util/pmix_cmd_line.h"
+#include "src/util/pmix_keyval_parse.h"
+#include "src/util/pmix_printf.h"
+#include "src/util/pmix_show_help.h"
 
 typedef struct {
     pmix_lock_t lock;
@@ -87,45 +88,26 @@ static void evhandler_reg_callbk(pmix_status_t status, size_t evhandler_ref, voi
     PMIX_WAKEUP_THREAD(&lock->lock);
 }
 
-/*****************************************
- * Global Vars for Command line Arguments
- *****************************************/
-typedef struct {
-    bool help;
-    bool verbose;
-    pid_t pid;
-    int code;
-    int range;
-} pmix_pevent_globals_t;
+static struct option peventoptions[] = {
+    PMIX_OPTION_SHORT_DEFINE(PMIX_CLI_HELP, PMIX_ARG_OPTIONAL, 'h'),
+    PMIX_OPTION_SHORT_DEFINE(PMIX_CLI_VERSION, PMIX_ARG_NONE, 'V'),
+    PMIX_OPTION_SHORT_DEFINE(PMIX_CLI_VERBOSE, PMIX_ARG_NONE, 'v'),
 
-pmix_pevent_globals_t pmix_pevent_globals = {
-    .help = false,
-    .verbose = false,
-    .pid = 0,
-    .code = 0,
-    .range = 0
+    PMIX_OPTION_DEFINE(PMIX_CLI_SYS_SERVER_FIRST, PMIX_ARG_NONE),
+    PMIX_OPTION_DEFINE(PMIX_CLI_SYSTEM_SERVER, PMIX_ARG_NONE),
+    PMIX_OPTION_DEFINE(PMIX_CLI_WAIT_TO_CONNECT, PMIX_ARG_REQD),
+    PMIX_OPTION_DEFINE(PMIX_CLI_NUM_CONNECT_RETRIES, PMIX_ARG_REQD),
+    PMIX_OPTION_DEFINE(PMIX_CLI_PID, PMIX_ARG_REQD),
+    PMIX_OPTION_DEFINE(PMIX_CLI_NAMESPACE, PMIX_ARG_REQD),
+    PMIX_OPTION_DEFINE(PMIX_CLI_URI, PMIX_ARG_REQD),
+    PMIX_OPTION_DEFINE(PMIX_CLI_TMPDIR, PMIX_ARG_REQD),
+
+    PMIX_OPTION_DEFINE("event", PMIX_ARG_REQD),
+    PMIX_OPTION_DEFINE("range", PMIX_ARG_REQD),
+
+    PMIX_OPTION_END
 };
-
-pmix_cmd_line_init_t cmd_line_opts[] = {{NULL, 'h', NULL, "help", 0, &pmix_pevent_globals.help,
-                                         PMIX_CMD_LINE_TYPE_BOOL, "This help message", PMIX_CMD_LINE_OTYPE_GENERAL},
-
-                                        {NULL, 'v', NULL, "verbose", 0,
-                                         &pmix_pevent_globals.verbose, PMIX_CMD_LINE_TYPE_BOOL,
-                                         "Be Verbose", PMIX_CMD_LINE_OTYPE_GENERAL},
-
-                                        {NULL, 'p', NULL, "pid", 1, &pmix_pevent_globals.pid,
-                                         PMIX_CMD_LINE_TYPE_INT, "Specify launcher pid", PMIX_CMD_LINE_OTYPE_GENERAL},
-
-                                        {NULL, 'e', NULL, "event", 0, &pmix_pevent_globals.code,
-                                         PMIX_CMD_LINE_TYPE_INT,
-                                         "Status code (integer value) of event to be sent", PMIX_CMD_LINE_OTYPE_GENERAL},
-
-                                        {NULL, 'r', NULL, "range", 0, &pmix_pevent_globals.range,
-                                         PMIX_CMD_LINE_TYPE_INT, "Range of event to be sent", PMIX_CMD_LINE_OTYPE_GENERAL},
-
-                                        /* End of list */
-                                        {NULL, '\0', NULL, NULL, 0, NULL, PMIX_CMD_LINE_TYPE_NULL,
-                                         NULL, PMIX_CMD_LINE_OTYPE_GENERAL}};
+static char *peventshorts = "h::vV";
 
 static void opcbfunc(pmix_status_t status, void *cbdata)
 {
@@ -139,14 +121,25 @@ int main(int argc, char **argv)
 {
     pmix_status_t rc;
     pmix_info_t *info;
+    size_t n;
     mylock_t mylock;
     pmix_status_t status;
     pmix_data_range_t range;
-    pmix_cmd_line_t cmd_line;
+    pmix_cli_result_t results;
+    pmix_cli_item_t *opt;
+    char *kptr;
+    pmix_rank_t rank = 0;
+    char hostname[PMIX_PATH_MAX];
+
+    PMIX_HIDE_UNUSED_PARAMS(argc);
 
     /* protect against problems if someone passes us thru a pipe
      * and then abnormally terminates the pipe early */
     signal(SIGPIPE, SIG_IGN);
+
+    /* init globals */
+    pmix_tool_basename = "pevent";
+    gethostname(hostname, sizeof(hostname));
 
     /* initialize the output system */
     if (!pmix_output_init()) {
@@ -154,9 +147,9 @@ int main(int argc, char **argv)
     }
 
     /* initialize install dirs code */
-    if (PMIX_SUCCESS
-        != (rc = pmix_mca_base_framework_open(&pmix_pinstalldirs_base_framework,
-                                              PMIX_MCA_BASE_OPEN_DEFAULT))) {
+    rc = pmix_mca_base_framework_open(&pmix_pinstalldirs_base_framework,
+                                      PMIX_MCA_BASE_OPEN_DEFAULT);
+    if (PMIX_SUCCESS != rc) {
         fprintf(stderr,
                 "pmix_pinstalldirs_base_open() failed -- process will likely abort (%s:%d, "
                 "returned %d instead of PMIX_SUCCESS)\n",
@@ -172,7 +165,7 @@ int main(int argc, char **argv)
     }
 
     /* initialize the help system */
-    pmix_show_help_init();
+    pmix_show_help_init(NULL);
 
     /* keyval lex-based parser */
     if (PMIX_SUCCESS != (rc = pmix_util_keyval_parse_init())) {
@@ -193,47 +186,147 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    pmix_cmd_line_create(&cmd_line, cmd_line_opts);
-
-    pmix_mca_base_open();
-    pmix_mca_base_cmd_line_setup(&cmd_line);
-    rc = pmix_cmd_line_parse(&cmd_line, false, false, argc, argv);
+    PMIX_CONSTRUCT(&results, pmix_cli_result_t);
+    rc = pmix_cmd_line_parse(argv, peventshorts, peventoptions,
+                             NULL, &results, "help-pevent.txt");
 
     if (PMIX_SUCCESS != rc) {
-        if (PMIX_ERR_SILENT != rc) {
+        if (PMIX_ERR_SILENT != rc && PMIX_OPERATION_SUCCEEDED != rc) {
             fprintf(stderr, "%s: command line error (%s)\n", argv[0], PMIx_Error_string(rc));
         }
-        return rc;
+        if (PMIX_OPERATION_SUCCEEDED == rc) {
+            rc = PMIX_SUCCESS;
+        }
+        exit(rc);
     }
 
-    if (pmix_pevent_globals.help) {
-        char *str, *args = NULL;
-        args = pmix_cmd_line_get_usage_msg(&cmd_line);
-        str = pmix_show_help_string("help-pevent.txt", "usage", true, args);
+    if (NULL == results.tail) {
+        char *str;
+        fprintf(stderr, "%s: must provide event\n", argv[0]);
+        str = pmix_show_help_string("help-pevent.txt", "usage", false,
+                                    pmix_tool_basename, "PMIx",
+                                    PMIX_PROXY_VERSION,
+                                    pmix_tool_basename,
+                                    PMIX_PROXY_BUGREPORT);
         if (NULL != str) {
             printf("%s", str);
             free(str);
         }
-        free(args);
-        /* If we show the help message, that should be all we do */
-        exit(0);
+        exit(1);
     }
 
-    status = (pmix_status_t) pmix_pevent_globals.code;
-    range = (pmix_data_range_t) pmix_pevent_globals.range;
+    /* if the event is a name, look it up */
+    if ('-' != results.tail[0][0] && !isdigit(results.tail[0][0])) {
+        /* it's a string name */
+        status = PMIx_Error_code(results.tail[0]);
+        if (INT32_MIN == status) {
+            char *str;
+            /* couldn't find it */
+            fprintf(stderr, "%s: could not identify status %s\n", argv[0], results.tail[0]);
+            str = pmix_show_help_string("help-pevent.txt", "usage", false,
+                                        pmix_tool_basename, "PMIx",
+                                        PMIX_PROXY_VERSION,
+                                        pmix_tool_basename,
+                                        PMIX_PROXY_BUGREPORT);
+            if (NULL != str) {
+                printf("%s", str);
+                free(str);
+            }
+            exit(1);
+        }
+    } else {
+        status = (pmix_status_t) strtoul(results.tail[0], NULL, 10);
+    }
+
+    opt = pmix_cmd_line_get_param(&results, "range");
+    if (NULL == opt) {
+        char *str;
+        str = pmix_show_help_string("help-pevent.txt", "usage", false,
+                                    pmix_tool_basename, "PMIx",
+                                    PMIX_PROXY_VERSION,
+                                    pmix_tool_basename,
+                                    PMIX_PROXY_BUGREPORT);
+        if (NULL != str) {
+            printf("%s", str);
+            free(str);
+        }
+        exit(1);
+    }
+    range = (pmix_data_range_t) strtoul(opt->values[0], NULL, 10);
 
     /* if we were given the pid of a starter, then direct that
      * we connect to it */
+    n = 3;
+    PMIX_INFO_CREATE(info, n);
+    if (NULL != (opt = pmix_cmd_line_get_param(&results, PMIX_CLI_PID))) {
+        /* see if it is an integer value */
+        char *leftover, *param;
+        pid_t pid;
+        leftover = NULL;
+        pid = strtol(opt->values[0], &leftover, 10);
+        if (NULL == leftover || 0 == strlen(leftover)) {
+            /* it is an integer */
+            PMIX_INFO_LOAD(&info[0], PMIX_SERVER_PIDINFO, &pid, PMIX_PID);
+        } else if (0 == strncasecmp(opt->values[0], "file", 4)) {
+            FILE *fp;
+            /* step over the file: prefix */
+            param = strchr(opt->values[0], ':');
+            if (NULL == param) {
+                /* malformed input */
+                pmix_show_help("help-pquery.txt", "bad-option-input", true, pmix_tool_basename,
+                               "--pid", opt->values[0], "file:path");
+                return PMIX_ERR_BAD_PARAM;
+            }
+            ++param;
+            fp = fopen(param, "r");
+            if (NULL == fp) {
+                pmix_show_help("help-pquery.txt", "file-open-error", true, pmix_tool_basename,
+                               "--pid", opt->values[0], param);
+                return PMIX_ERR_BAD_PARAM;
+            }
+            rc = fscanf(fp, "%lu", (unsigned long *) &pid);
+            if (1 != rc) {
+                /* if we were unable to obtain the single conversion we
+                 * require, then error out */
+                pmix_show_help("help-pquery.txt", "bad-file", true, pmix_tool_basename,
+                               "--pid", opt->values[0], param);
+                fclose(fp);
+                return PMIX_ERR_BAD_PARAM;
+            }
+            fclose(fp);
+            PMIX_INFO_LOAD(&info[0], PMIX_SERVER_PIDINFO, &pid, PMIX_PID);
+        } else { /* a string that's neither an integer nor starts with 'file:' */
+            pmix_show_help("help-pquery.txt", "bad-option-input", true,
+                           pmix_tool_basename, "--pid",
+                           opt->values[0], "file:path");
+            return PMIX_ERR_BAD_PARAM;
+        }
+    } else if (NULL != (opt = pmix_cmd_line_get_param(&results, PMIX_CLI_NAMESPACE))) {
+        PMIX_INFO_LOAD(&info[0], PMIX_SERVER_NSPACE, opt->values[0], PMIX_STRING);
+    } else if (NULL != (opt = pmix_cmd_line_get_param(&results, PMIX_CLI_URI))) {
+        PMIX_INFO_LOAD(&info[0], PMIX_SERVER_URI, opt->values[0], PMIX_STRING);
+    } else if (pmix_cmd_line_is_taken(&results, PMIX_CLI_SYS_SERVER_FIRST)) {
+        /* otherwise, use the system connection first, if available */
+        PMIX_INFO_LOAD(&info[0], PMIX_CONNECT_SYSTEM_FIRST, NULL, PMIX_BOOL);
+    } else if (pmix_cmd_line_is_taken(&results, PMIX_CLI_SYSTEM_SERVER)) {
+        PMIX_INFO_LOAD(&info[0], PMIX_CONNECT_TO_SYSTEM, NULL, PMIX_BOOL);
+    } else {
+        /* we set ourselves up as a tool, but no connections required */
+        PMIX_INFO_LOAD(&info[0], PMIX_TOOL_CONNECT_OPTIONAL, NULL, PMIX_BOOL);
+    }
 
-    /* otherwise, use the system connection first, if available */
-    PMIX_INFO_CREATE(info, 1);
-    PMIX_INFO_LOAD(&info[0], PMIX_CONNECT_SYSTEM_FIRST, NULL, PMIX_BOOL);
+    /* assign our own name */
+    pmix_asprintf(&kptr, "%s.%s.%lu", pmix_tool_basename, hostname, (unsigned long)getpid());
+    PMIX_INFO_LOAD(&info[1], PMIX_TOOL_NSPACE, kptr, PMIX_STRING);
+    free(kptr);
+    PMIX_INFO_LOAD(&info[2], PMIX_TOOL_RANK, &rank, PMIX_PROC_RANK);
+
     /* init as a tool */
-    if (PMIX_SUCCESS != (rc = PMIx_tool_init(&myproc, info, 1))) {
+    if (PMIX_SUCCESS != (rc = PMIx_tool_init(&myproc, info, 3))) {
         fprintf(stderr, "PMIx_tool_init failed: %d\n", rc);
         exit(rc);
     }
-    PMIX_INFO_FREE(info, 1);
+    PMIX_INFO_FREE(info, 3);
 
     /* register a default event handler */
     PMIX_CONSTRUCT_LOCK(&mylock.lock);

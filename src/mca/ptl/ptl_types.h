@@ -13,7 +13,7 @@
  * Copyright (c) 2007-2011 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2012-2013 Los Alamos National Security, Inc. All rights reserved.
  * Copyright (c) 2014-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -30,7 +30,7 @@
 #define PMIX_PTL_TYPES_H_
 
 #include "src/include/pmix_config.h"
-#include "src/include/types.h"
+#include "src/include/pmix_types.h"
 
 #ifdef HAVE_UNISTD_H
 #    include <unistd.h>
@@ -50,12 +50,13 @@
 #ifdef HAVE_SYS_TYPES_H
 #    include <sys/types.h>
 #endif
-#include PMIX_EVENT_HEADER
+#include <event.h>
 
 #include "src/class/pmix_list.h"
+#include "src/include/pmix_stdatomic.h"
 #include "src/mca/bfrops/bfrops_types.h"
 #include "src/mca/ptl/base/ptl_base_handshake.h"
-#include "src/util/output.h"
+#include "src/util/pmix_output.h"
 
 BEGIN_C_DECLS
 
@@ -77,10 +78,13 @@ typedef struct {
 #define PMIX_RELEASE_WILDCARD 255
 
 /* use 255 as WILDCARD for the release triplet values */
-#define PMIX_PROC_TYPE_STATIC_INIT                                                           \
-    {                                                                                        \
-        .type = PMIX_PROC_UNDEF, .major = PMIX_MAJOR_WILDCARD, .minor = PMIX_MINOR_WILDCARD, \
-        .release = PMIX_RELEASE_WILDCARD, .flag = 0                                          \
+#define PMIX_PROC_TYPE_STATIC_INIT          \
+    {                                       \
+        .type = PMIX_PROC_UNDEF,            \
+        .major = PMIX_MAJOR_WILDCARD,       \
+        .minor = PMIX_MINOR_WILDCARD,       \
+        .release = PMIX_RELEASE_WILDCARD,   \
+        .flag = 0                           \
     }
 
 /* Define process types - we use a bit-mask as procs can
@@ -100,6 +104,9 @@ typedef struct {
 #define PMIX_PROC_GATEWAY         (PMIX_PROC_SERVER | PMIX_PROC_GATEWAY_ACT)
 #define PMIX_PROC_SCHEDULER_ACT   0x80000000
 #define PMIX_PROC_SCHEDULER       (PMIX_PROC_SERVER | PMIX_PROC_SCHEDULER_ACT)
+#define PMIX_PROC_SYS_CTRLR_ACT   0x01000000
+#define PMIX_PROC_SYS_CTRLR       (PMIX_PROC_SERVER | PMIX_PROC_SYS_CTRLR_ACT)
+
 
 #define PMIX_SET_PEER_TYPE(a, b) (a)->proc_type.type |= (b)
 #define PMIX_SET_PROC_TYPE(a, b) (a)->type |= (b)
@@ -116,6 +123,8 @@ typedef struct {
     ((PMIX_PROC_CLIENT_TOOL_ACT & (p)->proc_type.type) && (PMIX_PROC_CLIENT & (p)->proc_type.type))
 #define PMIX_PEER_IS_GATEWAY(p)   (PMIX_PROC_GATEWAY_ACT & (p)->proc_type.type)
 #define PMIX_PEER_IS_SCHEDULER(p) (PMIX_PROC_SCHEDULER_ACT & (p)->proc_type.type)
+#define PMIX_PEER_IS_SYS_CTRLR(p) (PMIX_PROC_SYS_CTRLR_ACT & (p)->proc_type.type)
+
 
 #define PMIX_PROC_IS_CLIENT(p)   (PMIX_PROC_CLIENT & (p)->type)
 #define PMIX_PROC_IS_SERVER(p)   (PMIX_PROC_SERVER & (p)->type)
@@ -127,6 +136,8 @@ typedef struct {
     ((PMIX_PROC_CLIENT_TOOL_ACT & (p)->type) && (PMIX_PROC_CLIENT & (p)->type))
 #define PMIX_PROC_IS_GATEWAY(p)   (PMIX_PROC_GATEWAY_ACT & (p)->type)
 #define PMIX_PROC_IS_SCHEDULER(p) (PMIX_PROC_SCHEDULER_ACT & (p)->type)
+#define PMIX_PROC_IS_SYS_CTRLR(p) (PMIX_PROC_SYS_CTRLR_ACT & (p)->type)
+
 
 /* provide macros for setting the major, minor, and release values
  * just so people don't have to deal with the details of the struct */
@@ -318,6 +329,8 @@ PMIX_CLASS_DECLARATION(pmix_pending_connection_t);
 /* listener objects */
 typedef struct pmix_listener_t {
     pmix_list_item_t super;
+    pmix_event_t ev;
+    pmix_atomic_bool_t active;
     pmix_listener_protocol_t protocol;
     int socket;
     char *varname;
@@ -334,6 +347,7 @@ PMIX_CLASS_DECLARATION(pmix_listener_t);
 #define PMIX_LISTENER_STATIC_INIT           \
 {                                           \
     .super = PMIX_LIST_ITEM_STATIC_INIT,    \
+    .active = false,                        \
     .protocol = PMIX_PROTOCOL_UNDEF,        \
     .socket = 0,                            \
     .varname = NULL,                        \

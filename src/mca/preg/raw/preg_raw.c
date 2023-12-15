@@ -4,7 +4,7 @@
  * Copyright (c) 2018      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
  *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -27,12 +27,12 @@
 #include <ctype.h>
 
 #include "include/pmix.h"
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include "src/mca/bfrops/base/base.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_printf.h"
 
 #include "preg_raw.h"
 #include "src/mca/preg/base/base.h"
@@ -44,15 +44,19 @@ static pmix_status_t parse_procs(const char *regexp, char ***procs);
 static pmix_status_t copy(char **dest, size_t *len, const char *input);
 static pmix_status_t pack(pmix_buffer_t *buffer, const char *input);
 static pmix_status_t unpack(pmix_buffer_t *buffer, char **regex);
+static pmix_status_t release(char *regexp);
 
-pmix_preg_module_t pmix_preg_raw_module = {.name = "raw",
-                                           .generate_node_regex = generate_node_regex,
-                                           .generate_ppn = generate_ppn,
-                                           .parse_nodes = parse_nodes,
-                                           .parse_procs = parse_procs,
-                                           .copy = copy,
-                                           .pack = pack,
-                                           .unpack = unpack};
+pmix_preg_module_t pmix_preg_raw_module = {
+    .name = "raw",
+    .generate_node_regex = generate_node_regex,
+    .generate_ppn = generate_ppn,
+    .parse_nodes = parse_nodes,
+    .parse_procs = parse_procs,
+    .copy = copy,
+    .pack = pack,
+    .unpack = unpack,
+    .release = release
+};
 
 static pmix_status_t generate_node_regex(const char *input, char **regexp)
 {
@@ -82,7 +86,7 @@ static pmix_status_t parse_nodes(const char *regexp, char ***names)
         return PMIX_ERR_TAKE_NEXT_OPTION;
     }
 
-    *names = pmix_argv_split(&regexp[4], ',');
+    *names = PMIx_Argv_split(&regexp[4], ',');
     return PMIX_SUCCESS;
 }
 static pmix_status_t parse_procs(const char *regexp, char ***procs)
@@ -91,7 +95,7 @@ static pmix_status_t parse_procs(const char *regexp, char ***procs)
         return PMIX_ERR_TAKE_NEXT_OPTION;
     }
 
-    *procs = pmix_argv_split(&regexp[4], ';');
+    *procs = PMIx_Argv_split(&regexp[4], ';');
     return PMIX_SUCCESS;
 }
 
@@ -148,5 +152,17 @@ static pmix_status_t unpack(pmix_buffer_t *buffer, char **regex)
     if (NULL == *regex) {
         return PMIX_ERR_NOMEM;
     }
+    return PMIX_SUCCESS;
+}
+
+static pmix_status_t release(char *regexp)
+{
+    if (NULL == regexp) {
+        return PMIX_SUCCESS;
+    }
+    if (0 != strncmp(regexp, "raw:", 4)) {
+        return PMIX_ERR_TAKE_NEXT_OPTION;
+    }
+    free(regexp);
     return PMIX_SUCCESS;
 }

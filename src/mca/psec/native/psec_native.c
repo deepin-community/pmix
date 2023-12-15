@@ -3,7 +3,7 @@
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
  * Copyright (c) 2017      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -18,13 +18,13 @@
 #    include <sys/types.h>
 #endif
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include "src/include/pmix_globals.h"
 #include "src/include/pmix_socket_errno.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_output.h"
 
 #include "psec_native.h"
 #include "src/mca/psec/base/base.h"
@@ -79,7 +79,7 @@ static pmix_status_t create_cred(struct pmix_peer_t *peer, const pmix_info_t dir
         for (n = 0; n < ndirs; n++) {
             if (0 == strncmp(directives[n].key, PMIX_CRED_TYPE, PMIX_MAX_KEYLEN)) {
                 /* see if we are included */
-                types = pmix_argv_split(directives[n].value.data.string, ',');
+                types = PMIx_Argv_split(directives[n].value.data.string, ',');
                 /* start by assuming they don't want us */
                 takeus = false;
                 for (m = 0; NULL != types[m]; m++) {
@@ -89,7 +89,7 @@ static pmix_status_t create_cred(struct pmix_peer_t *peer, const pmix_info_t dir
                         break;
                     }
                 }
-                pmix_argv_free(types);
+                PMIx_Argv_free(types);
                 break;
             }
         }
@@ -230,7 +230,7 @@ static pmix_status_t validate_cred(struct pmix_peer_t *peer, const pmix_info_t d
         for (n = 0; n < ndirs; n++) {
             if (0 == strncmp(directives[n].key, PMIX_CRED_TYPE, PMIX_MAX_KEYLEN)) {
                 /* split the specified string */
-                types = pmix_argv_split(directives[n].value.data.string, ',');
+                types = PMIx_Argv_split(directives[n].value.data.string, ',');
                 takeus = false;
                 for (m = 0; NULL != types[m]; m++) {
                     if (0 == strcmp(types[m], "native")) {
@@ -239,7 +239,7 @@ static pmix_status_t validate_cred(struct pmix_peer_t *peer, const pmix_info_t d
                         break;
                     }
                 }
-                pmix_argv_free(types);
+                PMIx_Argv_free(types);
                 if (!takeus) {
                     return PMIX_ERR_NOT_SUPPORTED;
                 }

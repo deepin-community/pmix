@@ -16,7 +16,7 @@
  * Copyright (c) 2013-2017 Intel, Inc. All rights reserved.
  * Copyright (c) 2018      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -31,8 +31,8 @@
 
 #include "src/mca/preg/preg.h"
 #include "src/server/pmix_server_ops.h"
-#include "src/util/argv.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_output.h"
 #include "src/util/pmix_environ.h"
 
 #include "server_callbacks.h"
@@ -69,8 +69,8 @@ int main(int argc, char **argv)
     rc = pmix_preg.parse_nodes(regex, &nodes);
     free(regex);
     if (PMIX_SUCCESS == rc) {
-        regex = pmix_argv_join(nodes, ',');
-        pmix_argv_free(nodes);
+        regex = PMIx_Argv_join(nodes, ',');
+        PMIx_Argv_free(nodes);
         fprintf(stderr, "NODES: %s\n", TEST_NODES);
         fprintf(stderr, "RSULT: %s\n\n\n", regex);
         free(regex);
@@ -85,8 +85,8 @@ int main(int argc, char **argv)
     rc = pmix_preg.parse_procs(regex, &procs);
     free(regex);
     if (PMIX_SUCCESS == rc) {
-        regex = pmix_argv_join(procs, ';');
-        pmix_argv_free(procs);
+        regex = PMIx_Argv_join(procs, ';');
+        PMIx_Argv_free(procs);
         fprintf(stderr, "PROCS: %s\n", TEST_PROCS);
         fprintf(stderr, "RSULT: %s\n", regex);
         free(regex);
@@ -101,8 +101,8 @@ int main(int argc, char **argv)
     rc = pmix_preg.parse_nodes(regex, &nodes);
     free(regex);
     if (PMIX_SUCCESS == rc) {
-        regex = pmix_argv_join(nodes, ',');
-        pmix_argv_free(nodes);
+        regex = PMIx_Argv_join(nodes, ',');
+        PMIx_Argv_free(nodes);
         fprintf(stderr, "NODES: %s\n", TEST_NODES2);
         fprintf(stderr, "RSULT: %s\n\n\n", regex);
         free(regex);

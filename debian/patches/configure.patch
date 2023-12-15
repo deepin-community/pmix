@@ -1,0 +1,56 @@
+Description: <short summary of the patch>
+ TODO: Put a short summary on the line above and replace this paragraph
+ with a longer explanation of this change. Complete the meta-information
+ with other relevant fields (see below for details). To make it easier, the
+ information below has been extracted from the changelog. Adjust it or drop
+ it.
+ .
+ pmix (4.2.3-1) UNRELEASED; urgency=medium
+ .
+   * NNew upstream release
+Author: Alastair McKinstry <mckinstry@debian.org>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout https://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: (upstream|backport|vendor|other), (<patch-url>|commit:<commit-id>)
+Bug: <upstream-bugtracker-url>
+Bug-Debian: https://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: (no|not-needed|<patch-forwarded-url>)
+Applied-Upstream: <version>, (<commit-url>|commit:<commid-id>)
+Reviewed-By: <name and email of someone who approved/reviewed the patch>
+Last-Update: 2023-02-13
+
+--- a/docs/Makefile.am
++++ b/docs/Makefile.am
+@@ -94,7 +94,7 @@
+         $(PMIX_MAN5_BUILT)
+ 
+ ###########################################################################
+-if PMIX_BUILD_DOCS
++# if PMIX_BUILD_DOCS
+ 
+ include $(top_srcdir)/Makefile.openpmix-rules
+ 
+@@ -142,10 +142,10 @@
+ # Sphinx to build the HTML and man pages.
+ BUILT_SOURCES = $(ALL_MAN_BUILT)
+ 
+-endif PMIX_BUILD_DOCS
++# endif PMIX_BUILD_DOCS
+ 
+ ###########################################################################
+-if PMIX_INSTALL_DOCS
++# if PMIX_INSTALL_DOCS
+ 
+ man1_MANS = $(PMIX_MAN1_BUILT)
+ man3_MANS = $(PMIX_MAN3_BUILT)
+@@ -181,4 +181,4 @@
+ uninstall-hook:
+ 	rm -rf $(DESTDIR)$(docdir)
+ 
+-endif PMIX_INSTALL_DOCS
++# endif PMIX_INSTALL_DOCS

@@ -8,7 +8,7 @@
  *                         All rights reserved.
  * Copyright (c) 2020-2021 Triad National Security, LLC.
  *                         All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -33,7 +33,7 @@
 
 #include "src/class/pmix_list.h"
 #include "src/include/pmix_globals.h"
-#include "src/util/argv.h"
+#include "src/util/pmix_argv.h"
 
 #define TEST_NAMESPACE "smoky_nspace"
 
@@ -127,11 +127,11 @@ extern FILE *pmixt_outfile;
     char *fname = malloc( strlen(prefix) + MAX_DIGIT_LEN + 2 ); \
     sprintf(fname, "%s.%d.%d", prefix, ns_id, rank); \
     pmixt_outfile = fopen(fname, "w"); \
-    free(fname); \
     if( NULL == pmixt_outfile ){ \
         fprintf(stderr, "Cannot open file %s for writing!", fname); \
         exit(1); \
     } \
+    free(fname); \
 }
 
 #define PMIXT_CLOSE_FILE() { \
@@ -233,13 +233,13 @@ void free_nodes(int num_nodes);
 void free_params(test_params *params, validation_params *vparams);
 void set_client_argv(test_params *params, char ***argv, char **ltest_argv);
 
-void pmixt_exit(int exit_code);
+void pmixt_exit(int exit_code) __attribute__((__noreturn__));
 void pmixt_fix_rank_and_ns(pmix_proc_t *this_proc, validation_params *v_params);
 void pmixt_post_init(pmix_proc_t *this_proc, test_params *params, validation_params *val_params);
 void pmixt_post_finalize(pmix_proc_t *this_proc, test_params *params, validation_params *v_params);
 void pmixt_pre_init(int argc, char **argv, test_params *params, validation_params *v_params,
                     int (*parse_tst_ptr)(int *, int, char **, test_params *, validation_params *));
-void pmixt_validate_predefined(pmix_proc_t *myproc, const pmix_key_t key, pmix_value_t *value,
+void pmixt_validate_predefined(pmix_proc_t *myproc, const char *key, pmix_value_t *value,
                                const pmix_data_type_t expected_type, validation_params *val_params);
 
 char *pmixt_encode(const void *val, size_t vallen);

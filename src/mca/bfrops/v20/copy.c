@@ -13,7 +13,7 @@
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -26,9 +26,9 @@
 #include "bfrop_pmix20.h"
 #include "internal.h"
 #include "src/mca/bfrops/base/base.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_output.h"
 
 pmix_status_t pmix20_bfrop_copy(void **dest, void *src, pmix_data_type_t type)
 {
@@ -48,7 +48,7 @@ pmix_status_t pmix20_bfrop_copy(void **dest, void *src, pmix_data_type_t type)
 
     if (NULL
         == (info = (pmix_bfrop_type_info_t *)
-                pmix_pointer_array_get_item(&mca_bfrops_v20_component.types, type))) {
+                pmix_pointer_array_get_item(&pmix_mca_bfrops_v20_component.types, type))) {
         PMIX_ERROR_LOG(PMIX_ERR_UNKNOWN_DATA_TYPE);
         return PMIX_ERR_UNKNOWN_DATA_TYPE;
     }
@@ -649,10 +649,10 @@ pmix_status_t pmix20_bfrop_value_xfer(pmix_value_t *p, const pmix_value_t *src)
                     pa[n].cmd = strdup(sa[n].cmd);
                 }
                 if (NULL != sa[n].argv) {
-                    pa[n].argv = pmix_argv_copy(sa[n].argv);
+                    pa[n].argv = PMIx_Argv_copy(sa[n].argv);
                 }
                 if (NULL != sa[n].env) {
-                    pa[n].env = pmix_argv_copy(sa[n].env);
+                    pa[n].env = PMIx_Argv_copy(sa[n].env);
                 }
                 if (NULL != sa[n].cwd) {
                     pa[n].cwd = strdup(sa[n].cwd);
@@ -677,7 +677,7 @@ pmix_status_t pmix20_bfrop_value_xfer(pmix_value_t *p, const pmix_value_t *src)
             s1 = (pmix_info_t *) src->data.darray->array;
             for (n = 0; n < src->data.darray->size; n++) {
                 PMIX_LOAD_KEY(p1[n].key, s1[n].key);
-                rc = pmix_value_xfer(&p1[n].value, &s1[n].value);
+                rc = PMIx_Value_xfer(&p1[n].value, &s1[n].value);
                 if (PMIX_SUCCESS != rc) {
                     PMIX_INFO_FREE(p1, src->data.darray->size);
                     return rc;
@@ -694,9 +694,9 @@ pmix_status_t pmix20_bfrop_value_xfer(pmix_value_t *p, const pmix_value_t *src)
             for (n = 0; n < src->data.darray->size; n++) {
                 memcpy(&pd[n].proc, &sd[n].proc, sizeof(pmix_proc_t));
                 PMIX_LOAD_KEY(pd[n].key, sd[n].key);
-                rc = pmix_value_xfer(&pd[n].value, &sd[n].value);
+                rc = PMIx_Value_xfer(&pd[n].value, &sd[n].value);
                 if (PMIX_SUCCESS != rc) {
-                    PMIX_INFO_FREE(pd, src->data.darray->size);
+                    PMIX_PDATA_FREE(pd, src->data.darray->size);
                     return rc;
                 }
             }
@@ -871,7 +871,7 @@ pmix_status_t pmix20_bfrop_value_xfer(pmix_value_t *p, const pmix_value_t *src)
             sq = (pmix_query_t *) src->data.darray->array;
             for (n = 0; n < src->data.darray->size; n++) {
                 if (NULL != sq[n].keys) {
-                    pq[n].keys = pmix_argv_copy(sq[n].keys);
+                    pq[n].keys = PMIx_Argv_copy(sq[n].keys);
                 }
                 if (NULL != sq[n].qualifiers && 0 < sq[n].nqual) {
                     PMIX_INFO_CREATE(pq[n].qualifiers, sq[n].nqual);
@@ -954,8 +954,8 @@ pmix_status_t pmix20_bfrop_copy_app(pmix_app_t **dest, pmix_app_t *src, pmix_dat
 
     *dest = (pmix_app_t *) malloc(sizeof(pmix_app_t));
     (*dest)->cmd = strdup(src->cmd);
-    (*dest)->argv = pmix_argv_copy(src->argv);
-    (*dest)->env = pmix_argv_copy(src->env);
+    (*dest)->argv = PMIx_Argv_copy(src->argv);
+    (*dest)->env = PMIx_Argv_copy(src->env);
     if (NULL != src->cwd) {
         (*dest)->cwd = strdup(src->cwd);
     }
@@ -1287,10 +1287,10 @@ pmix_status_t pmix20_bfrop_copy_darray(pmix_data_array_t **dest, pmix_data_array
                 pa[n].cmd = strdup(sa[n].cmd);
             }
             if (NULL != sa[n].argv) {
-                pa[n].argv = pmix_argv_copy(sa[n].argv);
+                pa[n].argv = PMIx_Argv_copy(sa[n].argv);
             }
             if (NULL != sa[n].env) {
-                pa[n].env = pmix_argv_copy(sa[n].env);
+                pa[n].env = PMIx_Argv_copy(sa[n].env);
             }
             if (NULL != sa[n].cwd) {
                 pa[n].cwd = strdup(sa[n].cwd);
@@ -1505,7 +1505,7 @@ pmix_status_t pmix20_bfrop_copy_darray(pmix_data_array_t **dest, pmix_data_array
         sq = (pmix_query_t *) src->array;
         for (n = 0; n < src->size; n++) {
             if (NULL != sq[n].keys) {
-                pq[n].keys = pmix_argv_copy(sq[n].keys);
+                pq[n].keys = PMIx_Argv_copy(sq[n].keys);
             }
             if (NULL != sq[n].qualifiers && 0 < sq[n].nqual) {
                 PMIX_INFO_CREATE(pq[n].qualifiers, sq[n].nqual);
@@ -1541,7 +1541,7 @@ pmix_status_t pmix20_bfrop_copy_query(pmix_query_t **dest, pmix_query_t *src, pm
 
     *dest = (pmix_query_t *) malloc(sizeof(pmix_query_t));
     if (NULL != src->keys) {
-        (*dest)->keys = pmix_argv_copy(src->keys);
+        (*dest)->keys = PMIx_Argv_copy(src->keys);
     }
     (*dest)->nqual = src->nqual;
     if (NULL != src->qualifiers) {

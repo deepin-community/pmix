@@ -2,7 +2,7 @@
  * Copyright (c) 2015-2019 Intel, Inc.  All rights reserved.
  * Copyright (c) 2015      Mellanox Technologies, Inc.
  *                         All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -14,7 +14,7 @@
 #include "test_resolve_peers.h"
 #include "test_cd.h"
 
-#include "src/util/output.h"
+#include "src/util/pmix_output.h"
 
 static int resolve_nspace(char *nspace, test_params params, char *my_nspace, int my_rank)
 {
@@ -41,7 +41,7 @@ static int resolve_nspace(char *nspace, test_params params, char *my_nspace, int
     }
     if (nprocs != nranks) {
         TEST_ERROR(
-            ("%s:%d: Resolve peers returned incorect result: returned %lu processes, expected %lu",
+            ("%s:%d: Resolve peers returned incorrect result: returned %lu processes, expected %lu",
              my_nspace, my_rank, nprocs, nranks));
         PMIX_PROC_FREE(procs, nprocs);
         PMIX_PROC_FREE(ranks, nranks);

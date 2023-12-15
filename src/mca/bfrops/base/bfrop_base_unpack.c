@@ -15,7 +15,7 @@
  *                         and Technology (RIST).  All rights reserved.
  * Copyright (c) 2016-2019 Mellanox Technologies, Inc.
  *                         All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -28,9 +28,9 @@
 #include "src/hwloc/pmix_hwloc.h"
 #include "src/include/pmix_globals.h"
 #include "src/mca/preg/preg.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_output.h"
 
 #include "src/mca/bfrops/base/base.h"
 #include "src/mca/bfrops/bfrops_types.h"
@@ -54,8 +54,10 @@ static pmix_status_t pmix_bfrops_base_unpack_buffer(pmix_pointer_array_t *regtyp
         }
         /* if the data types don't match, then return an error */
         if (type != local_type) {
-            pmix_output(0, "PMIX bfrop:unpack: got type %d when expecting type %d", local_type,
-                        type);
+            pmix_output_verbose(20, pmix_bfrops_base_framework.framework_output,
+                                "PMIX bfrop:unpack: got type %s when expecting type %s",
+                                PMIx_Data_type_string(local_type),
+                                PMIx_Data_type_string(type));
             return PMIX_ERR_PACK_MISMATCH;
         }
     }
@@ -72,6 +74,10 @@ pmix_status_t pmix_bfrops_base_unpack(pmix_pointer_array_t *regtypes, pmix_buffe
 
     /* check for error */
     if (NULL == buffer || NULL == dst || NULL == num_vals) {
+        pmix_output(0, "SOMEONE IS NULL: buffer %s dst %s num_vals %s",
+            (NULL == buffer) ? "NULL" : "GOOD",
+            (NULL == dst) ? "NULL" : "GOOD",
+            (NULL == num_vals) ? "NULL" : "GOOD");
         return PMIX_ERR_BAD_PARAM;
     }
 
@@ -136,8 +142,8 @@ pmix_status_t pmix_bfrops_base_unpack(pmix_pointer_array_t *regtypes, pmix_buffe
     }
 
     /** Unpack the value(s) */
-    if (PMIX_SUCCESS
-        != (rc = pmix_bfrops_base_unpack_buffer(regtypes, buffer, dst, &local_num, type))) {
+    rc = pmix_bfrops_base_unpack_buffer(regtypes, buffer, dst, &local_num, type);
+    if (PMIX_SUCCESS != rc) {
         *num_vals = 0;
         ret = rc;
     }
@@ -974,7 +980,7 @@ pmix_status_t pmix_bfrops_base_unpack_app(pmix_pointer_array_t *regtypes, pmix_b
             if (NULL == tmp) {
                 return PMIX_ERROR;
             }
-            pmix_argv_append_nosize(&ptr[i].argv, tmp);
+            PMIx_Argv_append_nosize(&ptr[i].argv, tmp);
             free(tmp);
         }
         /* unpack env */
@@ -993,7 +999,7 @@ pmix_status_t pmix_bfrops_base_unpack_app(pmix_pointer_array_t *regtypes, pmix_b
             if (NULL == tmp) {
                 return PMIX_ERROR;
             }
-            pmix_argv_append_nosize(&ptr[i].env, tmp);
+            PMIx_Argv_append_nosize(&ptr[i].env, tmp);
             free(tmp);
         }
         /* unpack cwd */
@@ -1097,6 +1103,9 @@ pmix_status_t pmix_bfrops_base_unpack_bo(pmix_pointer_array_t *regtypes, pmix_bu
         }
         if (0 < ptr[i].size) {
             ptr[i].bytes = (char *) malloc(ptr[i].size * sizeof(char));
+            if (NULL == ptr[i].bytes) {
+                return PMIX_ERR_NOMEM;
+            }
             m = ptr[i].size;
             PMIX_BFROPS_UNPACK_TYPE(ret, buffer, ptr[i].bytes, &m, PMIX_BYTE, regtypes);
             if (PMIX_SUCCESS != ret) {

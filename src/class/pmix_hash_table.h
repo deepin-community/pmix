@@ -14,8 +14,9 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2016      Mellanox Technologies, Inc.
  *                         All rights reserved.
+ * Copyright (c) 2022      Triad National Security, LLC. All rights reserved.
  *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -36,7 +37,7 @@
 #define PMIX_HASH_TABLE_H
 
 #include "src/include/pmix_config.h"
-#include "src/include/prefetch.h"
+#include "src/include/pmix_prefetch.h"
 
 #ifdef HAVE_STDINT_H
 #    include <stdint.h>
@@ -44,7 +45,7 @@
 
 #include "src/class/pmix_list.h"
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 BEGIN_C_DECLS
 
@@ -52,6 +53,7 @@ PMIX_EXPORT PMIX_CLASS_DECLARATION(pmix_hash_table_t);
 
 struct pmix_hash_table_t {
     pmix_object_t super;                    /**< subclass of pmix_object_t */
+    const char *ht_label;                   /**< label for debugging */
     struct pmix_hash_element_t *ht_table;   /**< table of elements (opaque to users) */
     size_t ht_capacity;                     /**< allocated size (capacity) of table */
     size_t ht_size;                         /**< number of extant entries */
@@ -62,6 +64,20 @@ struct pmix_hash_table_t {
 };
 typedef struct pmix_hash_table_t pmix_hash_table_t;
 
+#define PMIX_HASH_TABLE_STATIC_INIT                 \
+{                                                   \
+    .super = PMIX_OBJ_STATIC_INIT(pmix_object_t),   \
+    .ht_label = NULL,                               \
+    .ht_table = NULL,                               \
+    .ht_capacity = 0,                               \
+    .ht_size = 0,                                   \
+    .ht_growth_trigger = 0,                         \
+    .ht_density_numer = 0,                          \
+    .ht_density_denom = 0,                          \
+    .ht_growth_numer = 0,                           \
+    .ht_growth_denom = 0,                           \
+    .ht_type_methods = NULL                         \
+}
 /**
  *  Initializes the table size, must be called before using
  *  the table.
@@ -334,6 +350,14 @@ PMIX_EXPORT int pmix_hash_table_get_first_key_ptr(pmix_hash_table_t *table, void
 PMIX_EXPORT int pmix_hash_table_get_next_key_ptr(pmix_hash_table_t *table, void **key,
                                                  size_t *key_size, void **value, void *in_node,
                                                  void **out_node);
+
+/**
+ * Returns the size of the opaque pmix_hash_element_t structure. Note that this
+ * only returns the size of the structure itself and does not capture the size
+ * of data that are stored within an element.
+ */
+PMIX_EXPORT size_t
+pmix_hash_table_sizeof_hash_element(void);
 
 /**
  * @brief Returns next power-of-two of the given value.

@@ -16,7 +16,7 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2016      Mellanox Technologies, Inc.
  *                         All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -33,8 +33,8 @@
 #define PMIX_BFROP_H_
 
 #include "src/include/pmix_config.h"
-#include "include/pmix_common.h"
-#include "src/include/types.h"
+#include "pmix_common.h"
+#include "src/include/pmix_types.h"
 
 #include "src/mca/mca.h"
 
@@ -376,8 +376,9 @@ PMIX_EXPORT extern int pmix_bfrops_base_output;
 
 #define PMIX_BFROPS_PACK(r, p, b, s, n, t)                                                   \
     do {                                                                                     \
-        pmix_output_verbose(2, pmix_bfrops_base_output, "[%s:%d] PACK version %s", __FILE__, \
-                            __LINE__, (p)->nptr->compat.bfrops->version);                    \
+        pmix_output_verbose(2, pmix_bfrops_base_output, "[%s:%d] PACK version %s type %s",   \
+                            __FILE__, __LINE__, (p)->nptr->compat.bfrops->version,           \
+                            PMIx_Data_type_string(t));                                      \
         if (PMIX_BFROP_BUFFER_UNDEF == (b)->type) {                                          \
             (b)->type = (p)->nptr->compat.type;                                              \
             (r) = (p)->nptr->compat.bfrops->pack(b, s, n, t);                                \
@@ -390,8 +391,9 @@ PMIX_EXPORT extern int pmix_bfrops_base_output;
 
 #define PMIX_BFROPS_UNPACK(r, p, b, d, m, t)                                                   \
     do {                                                                                       \
-        pmix_output_verbose(2, pmix_bfrops_base_output, "[%s:%d] UNPACK version %s", __FILE__, \
-                            __LINE__, (p)->nptr->compat.bfrops->version);                      \
+        pmix_output_verbose(2, pmix_bfrops_base_output, "[%s:%d] UNPACK version %s type %s",   \
+                            __FILE__, __LINE__, (p)->nptr->compat.bfrops->version,             \
+                            PMIx_Data_type_string(t));                                         \
         if ((b)->type == (p)->nptr->compat.type) {                                             \
             (r) = (p)->nptr->compat.bfrops->unpack(b, d, m, t);                                \
         } else {                                                                               \
@@ -439,7 +441,6 @@ typedef pmix_bfrops_module_t *(*pmix_bfrop_base_component_assign_module_fn_t)(vo
  */
 struct pmix_bfrops_base_component_t {
     pmix_mca_base_component_t base;
-    pmix_mca_base_component_data_t data;
     int priority;
     pmix_pointer_array_t types;
     pmix_bfrop_base_component_assign_module_fn_t assign_module;

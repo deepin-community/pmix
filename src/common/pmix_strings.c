@@ -14,7 +14,7 @@
  * Copyright (c) 2014-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2018      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -33,10 +33,12 @@
 #    include <stdlib.h>
 #endif
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include "src/common/pmix_attributes.h"
 #include "src/include/pmix_globals.h"
+#include "src/util/pmix_name_fns.h"
+#include "src/util/pmix_printf.h"
 
 PMIX_EXPORT const char *PMIx_Proc_state_string(pmix_proc_state_t state)
 {
@@ -156,14 +158,33 @@ PMIX_EXPORT const char *PMIx_Data_range_string(pmix_data_range_t range)
     }
 }
 
-PMIX_EXPORT const char *PMIx_Info_directives_string(pmix_info_directives_t directives)
+PMIX_EXPORT char *PMIx_Info_directives_string(pmix_info_directives_t directives)
 {
-    switch (directives) {
-    case PMIX_INFO_REQD:
-        return "REQUIRED";
-    default:
-        return "UNSPECIFIED";
+    char **tmp = NULL;
+    char *ret;
+
+    if (PMIX_INFO_QUALIFIER & directives) {
+        PMIx_Argv_append_nosize(&tmp, "QUALIFIER");
+    } else {
+        if (PMIX_INFO_REQD & directives) {
+            PMIx_Argv_append_nosize(&tmp, "REQUIRED");
+        } else {
+            PMIx_Argv_append_nosize(&tmp, "OPTIONAL");
+        }
+        if (PMIX_INFO_REQD_PROCESSED & directives) {
+            PMIx_Argv_append_nosize(&tmp, "PROCESSED");
+        }
+        if (PMIX_INFO_ARRAY_END & directives) {
+            PMIx_Argv_append_nosize(&tmp, "END");
+        }
     }
+    if (NULL != tmp) {
+        ret = PMIx_Argv_join(tmp, ':');
+        PMIx_Argv_free(tmp);
+    } else {
+        ret = strdup("UNSPECIFIED");
+    }
+    return ret;
 }
 
 PMIX_EXPORT const char *PMIx_Alloc_directive_string(pmix_alloc_directive_t directive)
@@ -239,6 +260,16 @@ PMIX_EXPORT const char *pmix_command_string(pmix_cmd_t cmd)
         return "GROUP LEAVE";
     case PMIX_GROUP_DESTRUCT_CMD:
         return "GROUP DESTRUCT";
+    case PMIX_IOF_DEREG_CMD:
+        return "IOF DEREG";
+    case PMIX_FABRIC_REGISTER_CMD:
+        return "FABRIC REGISTER";
+    case PMIX_FABRIC_UPDATE_CMD:
+        return "FABRIC UPDATE";
+    case PMIX_COMPUTE_DEVICE_DISTANCES_CMD:
+        return "COMPUTE DEVICE DIST";
+    case PMIX_REFRESH_CACHE:
+        return "REFRESH CACHE";
     default:
         return "UNKNOWN";
     }
@@ -300,12 +331,12 @@ PMIX_EXPORT const char *PMIx_Job_state_string(pmix_job_state_t state)
     }
 }
 
-PMIX_EXPORT const char *PMIx_Get_attribute_string(char *attribute)
+PMIX_EXPORT const char *PMIx_Get_attribute_string(const char *attribute)
 {
     return pmix_attributes_lookup(attribute);
 }
 
-PMIX_EXPORT const char *PMIx_Get_attribute_name(char *attrstring)
+PMIX_EXPORT const char *PMIx_Get_attribute_name(const char *attrstring)
 {
     return pmix_attributes_reverse_lookup(attrstring);
 }
@@ -344,4 +375,101 @@ const char *PMIx_Device_type_string(pmix_device_type_t type)
     default:
         return "UNKNOWN";
     }
+}
+
+const char* PMIx_Value_comparison_string(pmix_value_cmp_t cmp)
+{
+    switch (cmp) {
+    case PMIX_EQUAL:
+        return "EQUAL";
+    case PMIX_VALUE1_GREATER:
+        return "VALUE1 GREATER";
+    case PMIX_VALUE2_GREATER:
+        return "VALUE2 GREATER";
+    case PMIX_VALUE_TYPE_DIFFERENT:
+        return "DIFFERENT TYPES";
+    case PMIX_VALUE_COMPARISON_NOT_AVAIL:
+        return "COMPARISON NOT AVAILABLE";
+    case PMIX_VALUE_INCOMPATIBLE_OBJECTS:
+        return "INCOMPATIBLE OBJECTS";
+    default:
+        return "UNKNOWN VALUE";
+    }
+}
+
+char* PMIx_App_string(const pmix_app_t *app)
+{
+    char **ans = NULL;
+    char *tmp, *str;
+    size_t n;
+
+    /* add the command */
+    pmix_asprintf(&tmp, "CMD: %s", app->cmd);
+    PMIx_Argv_append_nosize(&ans, tmp);
+    free(tmp);
+
+    /* add the argv */
+    PMIx_Argv_append_nosize(&ans, "    ARGV:");
+    if (NULL == app->argv) {
+        PMIx_Argv_append_nosize(&ans, "        NONE");
+    } else {
+        for (n=0; NULL != app->argv[n]; n++) {
+            pmix_asprintf(&tmp, "        ARGV[%d]: %s", (int)n, app->argv[n]);
+            PMIx_Argv_append_nosize(&ans, tmp);
+            free(tmp);
+        }
+    }
+
+    /* add the env */
+    PMIx_Argv_append_nosize(&ans, "    ENV:");
+    if (NULL == app->env) {
+        PMIx_Argv_append_nosize(&ans, "        NONE");
+    } else {
+        for (n=0; NULL != app->env[n]; n++) {
+            pmix_asprintf(&tmp, "        ENV[%d]: %s", (int)n, app->env[n]);
+            PMIx_Argv_append_nosize(&ans, tmp);
+            free(tmp);
+        }
+    }
+
+    /* add the cwd */
+    if (NULL == app->cwd) {
+        PMIx_Argv_append_nosize(&ans, "    CWD: NULL");
+    } else {
+        pmix_asprintf(&tmp, "    CWD: %s", app->cwd);
+        PMIx_Argv_append_nosize(&ans, tmp);
+        free(tmp);
+    }
+
+    /* add the maxprocs */
+    pmix_asprintf(&tmp, "    MAXPROCS: %d", app->maxprocs);
+    PMIx_Argv_append_nosize(&ans, tmp);
+    free(tmp);
+
+    /* add any info */
+    if (NULL == app->info) {
+        PMIx_Argv_append_nosize(&ans, "    INFO: NONE");
+    } else {
+        PMIx_Argv_append_nosize(&ans, "    INFO:");
+        for (n=0; n < app->ninfo; n++) {
+            str = PMIx_Info_string(&app->info[n]);
+            pmix_asprintf(&tmp, "        INFO[%d]: %s", (int)n, str);
+            PMIx_Argv_append_nosize(&ans, tmp);
+            free(tmp);
+            free(str);
+        }
+    }
+
+    tmp = PMIx_Argv_join(ans, '\n');
+    PMIx_Argv_free(ans);
+    return tmp;
+}
+
+char* PMIx_Proc_string(const pmix_proc_t *proc)
+{
+    char *tmp, *result;
+
+    tmp = pmix_util_print_name_args(proc);
+    result = strdup(tmp);
+    return result;
 }

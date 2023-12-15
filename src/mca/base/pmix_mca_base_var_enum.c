@@ -14,7 +14,7 @@
  * Copyright (c) 2012-2015 Los Alamos National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2016-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -24,10 +24,10 @@
 
 #include "src/include/pmix_config.h"
 
-#include "src/mca/base/base.h"
+#include "src/mca/base/pmix_base.h"
 #include "src/mca/base/pmix_mca_base_var_enum.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -301,7 +301,9 @@ int pmix_mca_base_var_enum_create_flag(const char *name,
         return PMIX_ERR_OUT_OF_RESOURCE;
     }
 
+#if PMIX_ENABLE_DEBUG
     int all_flags = 0;
+#endif
     for (i = 0; i < new_enum->super.enum_value_count; ++i) {
         new_enum->enum_flags[i].flag = flags[i].flag;
         new_enum->enum_flags[i].string = strdup(flags[i].string);
@@ -312,7 +314,9 @@ int pmix_mca_base_var_enum_create_flag(const char *name,
         assert(!(flags[i].flag & flags[i].conflicting_flag));
         assert(!(all_flags & flags[i].flag));
         assert(flags[i].flag);
+#if PMIX_ENABLE_DEBUG
         all_flags |= flags[i].flag;
+#endif
     }
 
     *enumerator = new_enum;
@@ -506,7 +510,7 @@ static int enum_value_from_string_flag(pmix_mca_base_var_enum_t *self, const cha
         return ret;
     }
 
-    flags = pmix_argv_split(string_value, ',');
+    flags = PMIx_Argv_split(string_value, ',');
     if (NULL == flags) {
         return PMIX_ERR_BAD_PARAM;
     }
@@ -534,12 +538,12 @@ static int enum_value_from_string_flag(pmix_mca_base_var_enum_t *self, const cha
         }
 
         if (!found || conflict) {
-            pmix_argv_free(flags);
+            PMIx_Argv_free(flags);
             return !found ? PMIX_ERR_VALUE_OUT_OF_BOUNDS : PMIX_ERR_BAD_PARAM;
         }
     }
 
-    pmix_argv_free(flags);
+    PMIx_Argv_free(flags);
     *value_out = flag;
 
     return PMIX_SUCCESS;

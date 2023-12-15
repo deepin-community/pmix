@@ -11,10 +11,10 @@
 #                         All rights reserved.
 # Copyright (c) 2006-2016 Cisco Systems, Inc.  All rights reserved.
 # Copyright (c) 2012-2013 Los Alamos National Security, Inc.  All rights reserved.
-# Copyright (c) 2013-2020 Intel, Inc.  All rights reserved.
+# Copyright (c) 2013-2022 Intel, Inc.  All rights reserved.
 # Copyright (c) 2019      Amazon.com, Inc. or its affiliates.  All Rights
 #                         reserved.
-# Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+# Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -26,37 +26,26 @@
 # via AC_CONFIG_MACRO_DIR in configure.ac.
 ACLOCAL_AMFLAGS = -I ./config
 
-SUBDIRS = config contrib include src etc bindings
+SUBDIRS = config contrib include src etc bindings docs
 
 AM_DISTCHECK_CONFIGURE_FLAGS = --disable-dlopen
 
 headers =
 sources =
 nodist_headers =
-EXTRA_DIST = AUTHORS README HACKING INSTALL VERSION LICENSE autogen.pl EXCEPTIONS
+EXTRA_DIST = AUTHORS README.md VERSION LICENSE autogen.pl
 
 # Only install the valgrind suppressions file and man pages
 # if we're building in standalone mode
 dist_pmixdata_DATA =
-if ! PMIX_EMBEDDED_MODE
 dist_pmixdata_DATA += contrib/pmix-valgrind.supp
-
-endif
 
 if PMIX_TESTS_EXAMPLES
 SUBDIRS += . test/test_v2 test examples
 endif
 
-if WANT_INSTALL_HEADERS
 pmixdir = $(pmixincludedir)/$(subdir)
 nobase_pmix_HEADERS = $(headers)
-
-else
-
-noinst_HEADERS = $(headers)
-endif
-
-include man/Makefile.include
 
 dist-hook:
 	env LS_COLORS= sh "$(top_srcdir)/config/distscript.sh" "$(top_srcdir)" "$(distdir)" "$(PMIX_VERSION)" "$(PMIX_REPO_REV)"

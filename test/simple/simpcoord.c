@@ -17,7 +17,7 @@
  * Copyright (c) 2015      Mellanox Technologies, Inc.  All rights reserved.
  * Copyright (c) 2019      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -36,8 +36,9 @@
 
 #include "src/class/pmix_object.h"
 #include "src/include/pmix_globals.h"
-#include "src/util/output.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_output.h"
+#include "src/util/pmix_printf.h"
 
 static pmix_proc_t myproc;
 
@@ -101,10 +102,10 @@ int main(int argc, char **argv)
     {
         char **foo = NULL;
         for (n = 0; n < ninfo; n++) {
-            pmix_argv_append_nosize(&foo, bptr[0].bytes);
+            PMIx_Argv_append_nosize(&foo, bptr[0].bytes);
         }
-        tmp = pmix_argv_join(foo, ',');
-        pmix_argv_free(foo);
+        tmp = PMIx_Argv_join(foo, ',');
+        PMIx_Argv_free(foo);
         pmix_output(0, "Rank %u[%s]: ASSIGNED ENDPTS: %s", myproc.rank, hostname, tmp);
         free(tmp);
     }
@@ -127,11 +128,11 @@ nextstep:
             char *view;
             for (n = 0; n < coords[m].dims; n++) {
                 asprintf(&tmp, "%d", coords[m].coord[n]);
-                pmix_argv_append_nosize(&foo, tmp);
+                PMIx_Argv_append_nosize(&foo, tmp);
                 free(tmp);
             }
-            tmp = pmix_argv_join(foo, ',');
-            pmix_argv_free(foo);
+            tmp = PMIx_Argv_join(foo, ',');
+            PMIx_Argv_free(foo);
             if (PMIX_COORD_LOGICAL_VIEW == coords[m].view) {
                 view = "LOGICAL";
             } else {
@@ -146,11 +147,11 @@ nextstep:
         char *view;
         for (n = 0; n < val->data.coord->dims; n++) {
             asprintf(&tmp, "%d", val->data.coord->coord[n]);
-            pmix_argv_append_nosize(&foo, tmp);
+            PMIx_Argv_append_nosize(&foo, tmp);
             free(tmp);
         }
-        tmp = pmix_argv_join(foo, ',');
-        pmix_argv_free(foo);
+        tmp = PMIx_Argv_join(foo, ',');
+        PMIx_Argv_free(foo);
         if (PMIX_COORD_LOGICAL_VIEW == val->data.coord->view) {
             view = "LOGICAL";
         } else {

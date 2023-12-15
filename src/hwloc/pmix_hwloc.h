@@ -5,7 +5,8 @@
  * Copyright (c) 2015-2018 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2018-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2022      Triad National Security, LLC. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -25,9 +26,9 @@
 
 #include "src/include/pmix_config.h"
 
-#include PMIX_HWLOC_HEADER
+#include <hwloc.h>
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include "src/class/pmix_list.h"
 #include "src/include/pmix_globals.h"
@@ -48,7 +49,7 @@ BEGIN_C_DECLS
 #    define HWLOC_OBJ_L2CACHE HWLOC_OBJ_CACHE
 #    define HWLOC_OBJ_L1CACHE HWLOC_OBJ_CACHE
 
-#    if HWLOC_API_VERSION < 0x10a00
+#    if HWLOC_API_VERSION < 0x10b00
 #        define HWLOC_OBJ_NUMANODE HWLOC_OBJ_NODE
 #        define HWLOC_OBJ_PACKAGE  HWLOC_OBJ_SOCKET
 #    endif
@@ -60,25 +61,6 @@ BEGIN_C_DECLS
 #    define HAVE_DECL_HWLOC_OBJ_OSDEV_COPROC 1
 
 #endif
-
-typedef enum {
-    VM_HOLE_NONE = -1,
-    VM_HOLE_BEGIN = 0,        /* use hole at the very beginning */
-    VM_HOLE_AFTER_HEAP = 1,   /* use hole right after heap */
-    VM_HOLE_BEFORE_STACK = 2, /* use hole right before stack */
-    VM_HOLE_BIGGEST = 3,      /* use biggest hole */
-    VM_HOLE_IN_LIBS = 4,      /* use biggest hole between heap and stack */
-    VM_HOLE_CUSTOM = 5,       /* use given address if available */
-} pmix_hwloc_vm_hole_kind_t;
-
-typedef enum {
-    VM_MAP_FILE = 0,
-    VM_MAP_ANONYMOUS = 1,
-    VM_MAP_HEAP = 2,
-    VM_MAP_STACK = 3,
-    VM_MAP_OTHER = 4 /* vsyscall/vdso/vvar shouldn't occur since we stop after stack */
-} pmix_hwloc_vm_map_kind_t;
-
 
 /**
  * Register params
@@ -138,6 +120,8 @@ PMIX_EXPORT void pmix_hwloc_destruct_cpuset(pmix_cpuset_t *cpuset);
 
 PMIX_EXPORT void pmix_hwloc_release_cpuset(pmix_cpuset_t *ptr, size_t sz);
 
+PMIX_EXPORT pmix_status_t pmix_hwloc_get_cpuset_size(pmix_cpuset_t *ptr, size_t *sz);
+
 /* topology pack/unpack/copy/print functions */
 PMIX_EXPORT pmix_status_t pmix_hwloc_pack_topology(pmix_buffer_t *buf, pmix_topology_t *src,
                                                    pmix_pointer_array_t *regtypes);
@@ -152,6 +136,8 @@ PMIX_EXPORT char *pmix_hwloc_print_topology(pmix_topology_t *src);
 PMIX_EXPORT void pmix_hwloc_destruct_topology(pmix_topology_t *ptr);
 
 PMIX_EXPORT void pmix_hwloc_release_topology(pmix_topology_t *ptr, size_t sz);
+
+PMIX_EXPORT pmix_status_t pmix_hwloc_get_topology_size(pmix_topology_t *ptr, size_t *sz);
 
 /****  PRESERVE ABI  ****/
 PMIX_EXPORT void pmix_ploc_base_destruct_cpuset(pmix_cpuset_t *cpuset);

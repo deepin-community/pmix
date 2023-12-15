@@ -2,7 +2,7 @@
  * Copyright (c) 2015-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
  *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -27,19 +27,19 @@
 #endif
 #include <time.h>
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include "src/class/pmix_list.h"
 #include "src/include/pmix_globals.h"
 #include "src/include/pmix_socket_errno.h"
 #include "src/mca/base/pmix_mca_base_var.h"
 #include "src/mca/preg/preg.h"
-#include "src/util/alfg.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/output.h"
+#include "src/util/pmix_alfg.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_output.h"
 #include "src/util/pmix_environ.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_printf.h"
 
 #include "pstrg_lustre.h"
 #include "src/mca/pstrg/base/base.h"
@@ -92,11 +92,11 @@ static pmix_status_t query(pmix_query_t queries[], size_t nqueries, pmix_list_t 
     /* just put something here so that Travis will pass its tests
      * because it treats warnings as errors, and wants to warn about
      * unused variables */
-    sid = pmix_argv_split("foo,bar", ',');
-    pmix_argv_free(sid);
+    sid = PMIx_Argv_split("foo,bar", ',');
+    PMIx_Argv_free(sid);
     sid = NULL;
-    mountpt = pmix_argv_split("foo,bar", ',');
-    pmix_argv_free(mountpt);
+    mountpt = PMIx_Argv_split("foo,bar", ',');
+    PMIx_Argv_free(mountpt);
     mountpt = NULL;
 
     /* now on to the real code */
@@ -146,16 +146,16 @@ static pmix_status_t query(pmix_query_t queries[], size_t nqueries, pmix_list_t 
                     /* there may be more than one (comma-delimited) storage ID, so
                      * split them into a NULL-terminated argv-type array */
                     if (NULL != sid) {
-                        pmix_argv_free(sid);
+                        PMIx_Argv_free(sid);
                     }
-                    sid = pmix_argv_split(queries[n].qualifiers[k].value.data.string, ',');
+                    sid = PMIx_Argv_split(queries[n].qualifiers[k].value.data.string, ',');
                 } else if (0 == strcmp(queries[n].qualifiers[k].key, PMIX_STORAGE_PATH)) {
                     /* there may be more than one (comma-delimited) mount pt, so
                      * split them into a NULL-terminated argv-type array */
                     if (NULL != mountpt) {
-                        pmix_argv_free(mountpt);
+                        PMIx_Argv_free(mountpt);
                     }
-                    mountpt = pmix_argv_split(queries[n].qualifiers[k].value.data.string, ',');
+                    mountpt = PMIx_Argv_split(queries[n].qualifiers[k].value.data.string, ',');
                 } else if (0 == strcmp(queries[n].qualifiers[k].key, PMIX_USERID)) {
                     uid = queries[n].qualifiers[k].value.data.uint32;
                 } else if (0 == strcmp(queries[n].qualifiers[k].key, PMIX_GRPID)) {
@@ -165,10 +165,10 @@ static pmix_status_t query(pmix_query_t queries[], size_t nqueries, pmix_list_t 
 
             /* just some nonsense to get rid of compile warnings until we fully implement */
             if (NULL != sid) {
-                pmix_argv_free(sid);
+                PMIx_Argv_free(sid);
             }
             if (NULL != mountpt) {
-                pmix_argv_free(mountpt);
+                PMIx_Argv_free(mountpt);
             }
             k = uid - gid;
 

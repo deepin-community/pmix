@@ -6,14 +6,14 @@ Last-Updated: 2017-11-25
 
 --- a/src/mca/base/pmix_mca_base_var.c
 +++ b/src/mca/base/pmix_mca_base_var.c
-@@ -50,6 +50,10 @@
- #include "src/util/output.h"
- #include "src/util/pmix_environ.h"
+@@ -52,6 +52,10 @@
+ #include "src/util/pmix_printf.h"
+ #include "src/util/pmix_show_help.h"
  
 +#ifndef MAXPATHLEN /* Hurd */
 +#define MAXPATHLEN 1024
 +#endif
 +
  /*
-  * local variables
+  * global variables
   */

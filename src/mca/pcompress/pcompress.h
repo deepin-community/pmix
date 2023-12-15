@@ -7,7 +7,7 @@
  *                         reserved.
  *
  * Copyright (c) 2019-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -22,7 +22,7 @@
  * General Description:
  *
  * The PMIX Compress framework has been created to provide an abstract interface
- * to the compression agent library on the host machine. This fromework is useful
+ * to the compression agent library on the host machine. This framework is useful
  * when distributing files that can be compressed before sending to dimish the
  * load on the network.
  *
@@ -33,7 +33,7 @@
 
 #include "pmix_config.h"
 #include "src/class/pmix_object.h"
-#include "src/mca/base/base.h"
+#include "src/mca/base/pmix_base.h"
 #include "src/mca/mca.h"
 
 #if defined(c_plusplus) || defined(__cplusplus)
@@ -62,6 +62,7 @@ typedef bool (*pmix_compress_base_module_compress_string_fn_t)(char *instring, u
                                                                size_t *nbytes);
 typedef bool (*pmix_compress_base_module_decompress_string_fn_t)(char **outstring, uint8_t *inbytes,
                                                                  size_t len);
+typedef size_t (*pmix_compress_base_module_get_decompressed_strlen_fn_t)(const pmix_byte_object_t *bo);
 
 /**
  * Compress a block
@@ -74,44 +75,32 @@ typedef bool (*pmix_compress_base_module_compress_fn_t)(const uint8_t *inbytes, 
 
 typedef bool (*pmix_compress_base_module_decompress_fn_t)(uint8_t **outbytes, size_t *outlen,
                                                           const uint8_t *inbytes, size_t len);
+typedef size_t (*pmix_compress_base_module_get_decompressed_size_fn_t)(const pmix_byte_object_t *bo);
 
 /**
  * Structure for COMPRESS components.
  */
-struct pmix_compress_base_component_2_0_0_t {
-    /** PMIX_MCA base component */
-    pmix_mca_base_component_t base_version;
-    /** PMIX_MCA base data */
-    pmix_mca_base_component_data_t base_data;
-
-    /** Verbosity Level */
-    int verbose;
-    /** Output Handle for pmix_output */
-    int output_handle;
-    /** Default Priority */
-    int priority;
-};
-typedef struct pmix_compress_base_component_2_0_0_t pmix_compress_base_component_2_0_0_t;
-typedef struct pmix_compress_base_component_2_0_0_t pmix_compress_base_component_t;
+typedef  pmix_mca_base_component_t pmix_compress_base_component_t;
 
 /**
  * Structure for COMPRESS modules
  */
 struct pmix_compress_base_module_1_0_0_t {
     /** Initialization Function */
-    pmix_compress_base_module_init_fn_t init;
+    pmix_compress_base_module_init_fn_t                     init;
     /** Finalization Function */
-    pmix_compress_base_module_finalize_fn_t finalize;
+    pmix_compress_base_module_finalize_fn_t                 finalize;
 
     /** Compress interface */
-    pmix_compress_base_module_compress_fn_t compress;
+    pmix_compress_base_module_compress_fn_t                 compress;
 
     /** Decompress Interface */
-    pmix_compress_base_module_decompress_fn_t decompress;
-
+    pmix_compress_base_module_decompress_fn_t               decompress;
+    pmix_compress_base_module_get_decompressed_size_fn_t    get_decompressed_size;
     /* COMPRESS STRING */
-    pmix_compress_base_module_compress_string_fn_t compress_string;
-    pmix_compress_base_module_decompress_string_fn_t decompress_string;
+    pmix_compress_base_module_compress_string_fn_t          compress_string;
+    pmix_compress_base_module_decompress_string_fn_t        decompress_string;
+    pmix_compress_base_module_get_decompressed_strlen_fn_t  get_decompressed_strlen;
 };
 typedef struct pmix_compress_base_module_1_0_0_t pmix_compress_base_module_1_0_0_t;
 typedef struct pmix_compress_base_module_1_0_0_t pmix_compress_base_module_t;

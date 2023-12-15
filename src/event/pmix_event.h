@@ -12,7 +12,7 @@
  *                         All rights reserved.
  * Copyright (c) 2015-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2020      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -24,12 +24,13 @@
 #define PMIX_EVENT_H
 
 #include "src/include/pmix_config.h"
-#include "src/include/types.h"
-#include PMIX_EVENT_HEADER
+#include "src/include/pmix_types.h"
+#include <event.h>
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 #include "src/class/pmix_list.h"
-#include "src/util/output.h"
+#include "src/mca/bfrops/bfrops_types.h"
+#include "src/util/pmix_output.h"
 
 BEGIN_C_DECLS
 
@@ -56,12 +57,21 @@ typedef struct {
     size_t nprocs;
 } pmix_range_trkr_t;
 
+#define PMIX_RANGE_TRKR_STATIC_INIT     \
+{                                       \
+    .range = PMIX_RANGE_UNDEF,          \
+    .procs = NULL,                      \
+    .nprocs = 0                         \
+}
+
+
 /* define a common struct for tracking event handlers */
 typedef struct {
     pmix_list_item_t super;
     char *name;
     size_t index;
     uint8_t precedence;
+    bool oneshot;
     char *locator;
     pmix_proc_t source; // who generated this event
     /* When registering for events, callers can specify
@@ -86,6 +96,23 @@ typedef struct {
 } pmix_event_hdlr_t;
 PMIX_CLASS_DECLARATION(pmix_event_hdlr_t);
 
+#define PMIX_EVENT_HDLR_STATIC_INIT         \
+{                                           \
+    .super = PMIX_LIST_ITEM_STATIC_INIT,    \
+    .name = NULL,                           \
+    .index = SIZE_MAX,                      \
+    .precedence = UINT8_MAX,                \
+    .locator = NULL,                        \
+    .source = PMIX_PROC_STATIC_INIT,        \
+    .rng = PMIX_RANGE_TRKR_STATIC_INIT,     \
+    .affected - NULL,                       \
+    .naffected = 0,                         \
+    .evhdlr = NULL,                         \
+    .cbobject = NULL,                       \
+    .codes = NULL,                          \
+    .ncodes = 0                             \
+}
+
 /* define an object for tracking status codes we are actively
  * registered to receive */
 typedef struct {
@@ -109,6 +136,18 @@ typedef struct {
     pmix_list_t default_events;
 } pmix_events_t;
 PMIX_CLASS_DECLARATION(pmix_events_t);
+
+#define PMIX_EVENTS_STATIC_INIT                     \
+{                                                   \
+    .super = PMIX_OBJ_STATIC_INIT(pmix_object_t),   \
+    .nhdlrs = 0,                                    \
+    .first = NULL,                                  \
+    .last = NULL,                                   \
+    .actives = PMIX_LIST_STATIC_INIT,               \
+    .single_events = PMIX_LIST_STATIC_INIT,         \
+    .multi_events = PMIX_LIST_STATIC_INIT,          \
+    .default_events = PMIX_LIST_STATIC_INIT         \
+}
 
 /* define an object for chaining event notifications thru
  * the local state machine. Each registered event handler
@@ -169,12 +208,19 @@ PMIX_EXPORT bool pmix_notify_check_range(pmix_range_trkr_t *rng, const pmix_proc
 PMIX_EXPORT bool pmix_notify_check_affected(pmix_proc_t *interested, size_t ninterested,
                                             pmix_proc_t *affected, size_t naffected);
 
+PMIX_EXPORT pmix_status_t pmix_deregister_event_hdlr(size_t event_hdlr_ref,
+                                                     pmix_buffer_t *msg);
+
 /* invoke the server event notification handler */
 PMIX_EXPORT pmix_status_t pmix_server_notify_client_of_event(pmix_status_t status,
                                                              const pmix_proc_t *source,
                                                              pmix_data_range_t range,
                                                              const pmix_info_t info[], size_t ninfo,
                                                              pmix_op_cbfunc_t cbfunc, void *cbdata);
+PMIX_EXPORT pmix_status_t pmix_notify_server_of_event(pmix_status_t status, const pmix_proc_t *source,
+                                                      pmix_data_range_t range, const pmix_info_t info[],
+                                                      size_t ninfo, pmix_op_cbfunc_t cbfunc, void *cbdata,
+                                                      bool dolocal);
 
 PMIX_EXPORT void pmix_event_timeout_cb(int fd, short flags, void *arg);
 

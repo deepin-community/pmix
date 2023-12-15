@@ -10,7 +10,7 @@
  * Copyright (c) 2004-2005 The Regents of the University of California.
  *                         All rights reserved.
  * Copyright (c) 2015-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -42,7 +42,7 @@
 #ifdef HAVE_DIRENT_H
 #    include <dirent.h>
 #endif
-#ifdef HAVE_SYS_SYSCTL_H
+#if OAC_HAVE_APPLE && defined(HAVE_SYS_SYSCTL_H)
 #    include <sys/sysctl.h>
 #endif
 
@@ -52,13 +52,13 @@
 #include "src/mca/bfrops/base/base.h"
 #include "src/mca/gds/gds.h"
 #include "src/server/pmix_server_ops.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/getid.h"
-#include "src/util/os_path.h"
-#include "src/util/printf.h"
-#include "src/util/show_help.h"
-#include "src/util/strnlen.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_getid.h"
+#include "src/util/pmix_os_path.h"
+#include "src/util/pmix_printf.h"
+#include "src/util/pmix_show_help.h"
+#include "src/util/pmix_strnlen.h"
 
 #include "src/mca/ptl/base/base.h"
 
@@ -160,7 +160,7 @@ pmix_status_t pmix_ptl_base_recv_blocking(int sd, char *data, size_t size)
                 pmix_output_verbose(8, pmix_ptl_base_framework.framework_output,
                                     "blocking_recv received error %d:%s from remote - cycling",
                                     pmix_socket_errno, strerror(pmix_socket_errno));
-                return PMIX_ERR_TEMP_UNAVAILABLE;
+		continue;
             }
             if (pmix_socket_errno != EINTR) {
                 /* If we overflow the listen backlog, it's
@@ -174,7 +174,7 @@ pmix_status_t pmix_ptl_base_recv_blocking(int sd, char *data, size_t size)
                    in that case is a RST packet, which receive
                    will turn into a connection reset by peer
                    errno.  In that case, leave the socket in
-                   CONNECT_ACK and propogate the error up to
+                   CONNECT_ACK and propagate the error up to
                    recv_connect_ack, who will try to establish the
                    connection again */
                 pmix_output_verbose(8, pmix_ptl_base_framework.framework_output,
@@ -194,7 +194,8 @@ pmix_status_t pmix_ptl_base_recv_blocking(int sd, char *data, size_t size)
 
 #define PMIX_MAX_RETRIES 10
 
-pmix_status_t pmix_ptl_base_connect(struct sockaddr_storage *addr, pmix_socklen_t addrlen, int *fd)
+pmix_status_t pmix_ptl_base_connect(struct sockaddr_storage *addr,
+                                    pmix_socklen_t addrlen, int *fd)
 {
     int sd = -1, sd2;
     int retries = -1;
@@ -250,7 +251,7 @@ char *pmix_ptl_base_get_cmd_line(void)
 {
     char *p = NULL;
 
-#if PMIX_HAVE_APPLE
+#if OAC_HAVE_APPLE
     int mib[3], argmax, nargs, num;
     size_t size;
     char *procargs = NULL, *cp, *cptr;
@@ -291,7 +292,7 @@ char *pmix_ptl_base_get_cmd_line(void)
     cp = procargs + sizeof(nargs);
     cp += strlen(cp);
     /* this is the first argv */
-    pmix_argv_append_nosize(&stack, cp);
+    PMIx_Argv_append_nosize(&stack, cp);
     /* skip any embedded NULLs */
     while (cp < &procargs[size] && '\0' == *cp) {
         ++cp;
@@ -302,7 +303,7 @@ char *pmix_ptl_base_get_cmd_line(void)
         num = 0;
         while (cp < &procargs[size] && num < nargs) {
             if ('\0' == *cp) {
-                pmix_argv_append_nosize(&stack, cptr);
+                PMIx_Argv_append_nosize(&stack, cptr);
                 ++cp; // skip over the NULL
                 cptr = cp;
                 ++num;
@@ -312,8 +313,8 @@ char *pmix_ptl_base_get_cmd_line(void)
         }
     }
 
-    p = pmix_argv_join(stack, ' ');
-    pmix_argv_free(stack);
+    p = PMIx_Argv_join(stack, ' ');
+    PMIx_Argv_free(stack);
     free(procargs);
 #else
     char tmp[512];
@@ -376,6 +377,7 @@ pmix_status_t pmix_ptl_base_connect_to_peer(struct pmix_peer_t *pr, pmix_info_t 
     size_t n;
     bool system_level = false;
     bool system_level_only = false;
+    bool scheduler = false;
     pid_t pid = 0, mypid;
     pmix_list_t ilist;
     pmix_info_caddy_t *kv;
@@ -404,6 +406,9 @@ pmix_status_t pmix_ptl_base_connect_to_peer(struct pmix_peer_t *pr, pmix_info_t 
             } else if (PMIX_CHECK_KEY(&info[n], PMIX_CONNECT_SYSTEM_FIRST)) {
                 /* try the system-level */
                 system_level = PMIX_INFO_TRUE(&info[n]);
+            } else if (PMIX_CHECK_KEY(&info[n], PMIX_CONNECT_TO_SCHEDULER)) {
+                /* find the scheduler */
+                scheduler = PMIX_INFO_TRUE(&info[n]);
             } else if (PMIX_CHECK_KEY(&info[n], PMIX_SERVER_PIDINFO)) {
                 pid = info[n].value.data.pid;
             } else if (PMIX_CHECK_KEY(&info[n], PMIX_SERVER_NSPACE)) {
@@ -610,6 +615,41 @@ pmix_status_t pmix_ptl_base_connect_to_peer(struct pmix_peer_t *pr, pmix_info_t 
                             "ptl:tool: connecting to system failed");
         rc = PMIX_ERR_UNREACH;
         goto cleanup;
+    }
+
+    /* if they asked for the scheduler, then look for it */
+    if (scheduler) {
+        if (0 > asprintf(&filename, "%s/pmix.sched.%s",
+                         pmix_ptl_base.system_tmpdir,
+                         pmix_globals.hostname)) {
+            rc = PMIX_ERR_NOMEM;
+            goto cleanup;
+        }
+        pmix_output_verbose(2, pmix_ptl_base_framework.framework_output,
+                            "ptl:tool:tool looking for scheduler at %s", filename);
+        /* try to read the file */
+        PMIX_CONSTRUCT(&connections, pmix_list_t);
+        rc = pmix_ptl_base_parse_uri_file(filename, &connections);
+        free(filename);
+        if (PMIX_SUCCESS == rc) {
+            rc = check_connections(&connections);
+            if (PMIX_SUCCESS != rc) {
+                PMIX_LIST_DESTRUCT(&connections);
+                goto cleanup;
+            }
+            cn = (pmix_connection_t *) pmix_list_get_first(&connections);
+            nspace = cn->nspace;
+            cn->nspace = NULL;
+            rank = cn->rank;
+            suri = cn->uri;
+            cn->uri = NULL;
+            peer->protocol = PMIX_PROTOCOL_V2;
+            PMIX_SET_PEER_VERSION(peer, cn->version, 2, 0);
+            PMIX_SET_PEER_TYPE(peer, PMIX_PROC_SCHEDULER);
+            PMIX_LIST_DESTRUCT(&connections);
+            goto complete;
+        }
+        PMIX_LIST_DESTRUCT(&connections);
     }
 
     /* if they gave us a pid, then look for it */

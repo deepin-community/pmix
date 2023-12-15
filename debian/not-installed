@@ -1,1 +1,4 @@
 /usr/lib/*/pmix2/share/pmix-mca-params.conf
+/usr/lib/*/pmix2/local/bin/cygdb
+/usr/lib/*/pmix2/local/bin/cython
+/usr/lib/*/pmix2/local/bin/cythonize

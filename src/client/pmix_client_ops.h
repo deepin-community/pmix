@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2015-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -17,7 +17,7 @@
 #include "src/class/pmix_pointer_array.h"
 #include "src/common/pmix_iof.h"
 #include "src/include/pmix_globals.h"
-#include "src/threads/threads.h"
+#include "src/threads/pmix_threads.h"
 
 BEGIN_C_DECLS
 
@@ -26,6 +26,7 @@ typedef struct {
     bool singleton;               // no server
     pmix_list_t pending_requests; // list of pmix_cb_t pending data requests
     pmix_pointer_array_t peers;   // array of pmix_peer_t cached for data ops
+    pmix_list_t groups;           // list of groups this client is part of
     // verbosity for client get operations
     int get_output;
     int get_verbose;
@@ -56,6 +57,11 @@ typedef struct {
 } pmix_client_globals_t;
 
 PMIX_EXPORT extern pmix_client_globals_t pmix_client_globals;
+
+PMIX_EXPORT void pmix_parse_localquery(int sd, short args, void *cbdata);
+
+PMIX_EXPORT pmix_status_t pmix_client_convert_group_procs(const pmix_proc_t *inprocs, size_t insize,
+                                                          pmix_proc_t **outprocs, size_t *outsize);
 
 END_C_DECLS
 

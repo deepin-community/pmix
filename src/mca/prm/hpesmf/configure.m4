@@ -1,7 +1,6 @@
 # -*- shell-script -*-
 #
 # Copyright (c) 2020      Intel, Inc.  All rights reserved.
-# Copyright (c) 2021      Nanook Consulting.  All rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow

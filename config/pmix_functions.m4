@@ -17,7 +17,8 @@ dnl Copyright (c) 2013-2020 Intel, Inc.  All rights reserved.
 dnl Copyright (c) 2017      Research Organization for Information Science
 dnl                         and Technology (RIST). All rights reserved.
 dnl
-dnl Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+dnl Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
+dnl Copyright (c) 2021-2022 Amazon.com, Inc. or its affiliates.  All Rights reserved.
 dnl $COPYRIGHT$
 dnl
 dnl Additional copyrights may follow
@@ -43,7 +44,7 @@ dnl
 AC_DEFUN([PMIX_CONFIGURE_SETUP],[
 
 # Some helper script functions.  Unfortunately, we cannot use $1 kinds
-# of arugments here because of the m4 substitution.  So we have to set
+# of arguments here because of the m4 substitution.  So we have to set
 # special variable names before invoking the function.  :-\
 
 pmix_show_title() {
@@ -205,285 +206,58 @@ dnl #######################################################################
 dnl #######################################################################
 dnl #######################################################################
 
-AC_DEFUN([PMIX_LOG_MSG],[
 # 1 is the message
 # 2 is whether to put a prefix or not
-if test -n "$2"; then
-    echo "configure:__oline__: $1" >&5
-else
-    echo $1 >&5
-fi])dnl
+AC_DEFUN([PMIX_LOG_MSG],
+[AS_IF([test -n "$2"], [OAC_LOG_MSG([$1])], [OAC_LOG_MSG_NOPREFIX([$1])])])
 
 dnl #######################################################################
 dnl #######################################################################
 dnl #######################################################################
 
-AC_DEFUN([PMIX_LOG_FILE],[
-# 1 is the filename
-if test -n "$1" && test -f "$1"; then
-    cat $1 >&5
-fi])dnl
+m4_copy([OAC_LOG_FILE], [PMIX_LOG_FILE])
 
 dnl #######################################################################
 dnl #######################################################################
 dnl #######################################################################
 
-AC_DEFUN([PMIX_LOG_COMMAND],[
-# 1 is the command
-# 2 is actions to do if success
-# 3 is actions to do if fail
-echo "configure:__oline__: $1" >&5
-$1 1>&5 2>&1
-pmix_status=$?
-PMIX_LOG_MSG([\$? = $pmix_status], 1)
-if test "$pmix_status" = "0"; then
-    unset pmix_status
-    $2
-else
-    unset pmix_status
-    $3
-fi])dnl
+m4_copy([OAC_LOG_COMMAND], [PMIX_LOG_COMMAND])
 
 dnl #######################################################################
 dnl #######################################################################
 dnl #######################################################################
 
-AC_DEFUN([PMIX_UNIQ],[
-# 1 is the variable name to be uniq-ized
-pmix_name=$1
-
-# Go through each item in the variable and only keep the unique ones
-
-pmix_count=0
-for val in ${$1}; do
-    pmix_done=0
-    pmix_i=1
-    pmix_found=0
-
-    # Loop over every token we've seen so far
-
-    pmix_done="`expr $pmix_i \> $pmix_count`"
-    while test "$pmix_found" = "0" && test "$pmix_done" = "0"; do
-
-	# Have we seen this token already?  Prefix the comparison with
-	# "x" so that "-Lfoo" values won't be cause an error.
-
-	pmix_eval="expr x$val = x\$pmix_array_$pmix_i"
-	pmix_found=`eval $pmix_eval`
-
-	# Check the ending condition
-
-	pmix_done="`expr $pmix_i \>= $pmix_count`"
-
-	# Increment the counter
-
-	pmix_i="`expr $pmix_i + 1`"
-    done
-
-    # Check for special cases where we do want to allow repeated
-    # arguments (per
-    # https://www.open-mpi.org/community/lists/devel/2012/08/11362.php).
-
-    case $val in
-    -Xclang|-Xg)
-            pmix_found=0
-            pmix_i=`expr $pmix_count + 1`
-            ;;
-    esac
-
-    # If we didn't find the token, add it to the "array"
-
-    if test "$pmix_found" = "0"; then
-	pmix_eval="pmix_array_$pmix_i=$val"
-	eval $pmix_eval
-	pmix_count="`expr $pmix_count + 1`"
-    else
-	pmix_i="`expr $pmix_i - 1`"
-    fi
-done
-
-# Take all the items in the "array" and assemble them back into a
-# single variable
-
-pmix_i=1
-pmix_done="`expr $pmix_i \> $pmix_count`"
-pmix_newval=
-while test "$pmix_done" = "0"; do
-    pmix_eval="pmix_newval=\"$pmix_newval \$pmix_array_$pmix_i\""
-    eval $pmix_eval
-
-    pmix_eval="unset pmix_array_$pmix_i"
-    eval $pmix_eval
-
-    pmix_done="`expr $pmix_i \>= $pmix_count`"
-    pmix_i="`expr $pmix_i + 1`"
-done
-
-# Done; do the assignment
-
-pmix_newval="`echo $pmix_newval`"
-pmix_eval="$pmix_name=\"$pmix_newval\""
-eval $pmix_eval
-
-# Clean up
-
-unset pmix_name pmix_i pmix_done pmix_newval pmix_eval pmix_count])dnl
+m4_copy([OAC_UNIQ], [PMIX_UNIQ])
 
 dnl #######################################################################
 dnl #######################################################################
 dnl #######################################################################
 
-# Remove all duplicate -I, -L, and -l flags from the variable named $1
-AC_DEFUN([PMIX_FLAGS_UNIQ],[
-    # 1 is the variable name to be uniq-ized
-    pmix_name=$1
-
-    # Go through each item in the variable and only keep the unique ones
-
-    pmix_count=0
-    for val in ${$1}; do
-        pmix_done=0
-        pmix_i=1
-        pmix_found=0
-
-        # Loop over every token we've seen so far
-
-        pmix_done="`expr $pmix_i \> $pmix_count`"
-        while test "$pmix_found" = "0" && test "$pmix_done" = "0"; do
-
-            # Have we seen this token already?  Prefix the comparison
-            # with "x" so that "-Lfoo" values won't be cause an error.
-
-	    pmix_eval="expr x$val = x\$pmix_array_$pmix_i"
-	    pmix_found=`eval $pmix_eval`
-
-            # Check the ending condition
-
-	    pmix_done="`expr $pmix_i \>= $pmix_count`"
-
-            # Increment the counter
-
-	    pmix_i="`expr $pmix_i + 1`"
-        done
-
-        # Check for special cases where we do want to allow repeated
-        # arguments (per
-        # https://www.open-mpi.org/community/lists/devel/2012/08/11362.php
-        # and
-        # https://github.com/open-mpi/ompi/issues/324).
-
-        case $val in
-        -Xclang|-Xg)
-                pmix_found=0
-                pmix_i=`expr $pmix_count + 1`
-                ;;
-        -framework)
-                pmix_found=0
-                pmix_i=`expr $pmix_count + 1`
-                ;;
-        --param)
-                pmix_found=0
-                pmix_i=`expr $pmix_count + 1`
-                ;;
-        esac
-
-        # If we didn't find the token, add it to the "array"
-
-        if test "$pmix_found" = "0"; then
-	    pmix_eval="pmix_array_$pmix_i=$val"
-	    eval $pmix_eval
-	    pmix_count="`expr $pmix_count + 1`"
-        else
-	    pmix_i="`expr $pmix_i - 1`"
-        fi
-    done
-
-    # Take all the items in the "array" and assemble them back into a
-    # single variable
-
-    pmix_i=1
-    pmix_done="`expr $pmix_i \> $pmix_count`"
-    pmix_newval=
-    while test "$pmix_done" = "0"; do
-        pmix_eval="pmix_newval=\"$pmix_newval \$pmix_array_$pmix_i\""
-        eval $pmix_eval
-
-        pmix_eval="unset pmix_array_$pmix_i"
-        eval $pmix_eval
-
-        pmix_done="`expr $pmix_i \>= $pmix_count`"
-        pmix_i="`expr $pmix_i + 1`"
-    done
-
-    # Done; do the assignment
-
-    pmix_newval="`echo $pmix_newval`"
-    pmix_eval="$pmix_name=\"$pmix_newval\""
-    eval $pmix_eval
-
-    # Clean up
-
-    unset pmix_name pmix_i pmix_done pmix_newval pmix_eval pmix_count
-])dnl
+m4_copy([OAC_APPEND], [PMIX_APPEND])
 
 dnl #######################################################################
 dnl #######################################################################
 dnl #######################################################################
 
-# PMIX_APPEND_UNIQ(variable, new_argument)
-# ----------------------------------------
-# Append new_argument to variable if not already in variable.  This assumes a
-# space seperated list.
-#
-# This could probably be made more efficient :(.
-AC_DEFUN([PMIX_APPEND_UNIQ], [
-for arg in $2; do
-    pmix_found=0;
-    for val in ${$1}; do
-        if test "x$val" = "x$arg" ; then
-            pmix_found=1
-            break
-        fi
-    done
-    if test "$pmix_found" = "0" ; then
-        if test -z "$$1"; then
-            $1="$arg"
-        else
-            $1="$$1 $arg"
-        fi
-    fi
-done
-unset pmix_found
-])
+m4_copy([OAC_APPEND_UNIQ], [PMIX_APPEND_UNIQ])
 
 dnl #######################################################################
 dnl #######################################################################
 dnl #######################################################################
 
-# PMIX_FLAGS_APPEND_UNIQ(variable, new_argument)
-# ----------------------------------------------
-# Append new_argument to variable if:
-#
-# - the argument does not begin with -I, -L, or -l, or
-# - the argument begins with -I, -L, or -l, and it's not already in variable
-#
-# This macro assumes a space seperated list.
-AC_DEFUN([PMIX_FLAGS_APPEND_UNIQ], [
-    PMIX_VAR_SCOPE_PUSH([pmix_tmp pmix_append])
+m4_copy([OAC_FLAGS_APPEND_UNIQ], [PMIX_FLAGS_APPEND_UNIQ])
 
-    for arg in $2; do
-        pmix_tmp=`echo $arg | cut -c1-2`
-        pmix_append=1
-        AS_IF([test "$pmix_tmp" = "-I" || test "$pmix_tmp" = "-L" || test "$pmix_tmp" = "-l"],
-              [for val in ${$1}; do
-                   AS_IF([test "x$val" = "x$arg"], [pmix_append=0])
-               done])
-        AS_IF([test "$pmix_append" = "1"],
-              [AS_IF([test -z "$$1"], [$1=$arg], [$1="$$1 $arg"])])
-    done
+dnl #######################################################################
+dnl #######################################################################
+dnl #######################################################################
 
-    PMIX_VAR_SCOPE_POP
-])
+m4_copy([OAC_FLAGS_PREPEND_UNIQ], [PMIX_FLAGS_PREPEND_UNIQ])
+
+dnl #######################################################################
+dnl #######################################################################
+dnl #######################################################################
+
+m4_copy([OAC_FLAGS_APPEND_MOVE], [PMIX_FLAGS_APPEND_MOVE])
 
 dnl #######################################################################
 dnl #######################################################################
@@ -520,63 +294,8 @@ dnl #######################################################################
 dnl #######################################################################
 dnl #######################################################################
 
-# Declare some variables; use PMIX_VAR_SCOPE_END to ensure that they
-# are cleaned up / undefined.
-AC_DEFUN([PMIX_VAR_SCOPE_PUSH],[
-
-    # Is the private index set?  If not, set it.
-    if test "x$pmix_scope_index" = "x"; then
-        pmix_scope_index=1
-    fi
-
-    # First, check to see if any of these variables are already set.
-    # This is a simple sanity check to ensure we're not already
-    # overwriting pre-existing variables (that have a non-empty
-    # value).  It's not a perfect check, but at least it's something.
-    for pmix_var in $1; do
-        pmix_str="pmix_str=\"\$$pmix_var\""
-        eval $pmix_str
-
-        if test "x$pmix_str" != "x"; then
-            AC_MSG_WARN([Found configure shell variable clash!])
-            AC_MSG_WARN([[PMIX_VAR_SCOPE_PUSH] called on "$pmix_var",])
-            AC_MSG_WARN([but it is already defined with value "$pmix_str"])
-            AC_MSG_WARN([This usually indicates an error in configure.])
-            AC_MSG_ERROR([Cannot continue])
-        fi
-    done
-
-    # Ok, we passed the simple sanity check.  Save all these names so
-    # that we can unset them at the end of the scope.
-    pmix_str="pmix_scope_$pmix_scope_index=\"$1\""
-    eval $pmix_str
-    unset pmix_str
-
-    env | grep pmix_scope
-    pmix_scope_index=`expr $pmix_scope_index + 1`
-])dnl
-
-# Unset a bunch of variables that were previously set
-AC_DEFUN([PMIX_VAR_SCOPE_POP],[
-    # Unwind the index
-    pmix_scope_index=`expr $pmix_scope_index - 1`
-    pmix_scope_test=`expr $pmix_scope_index \> 0`
-    if test "$pmix_scope_test" = "0"; then
-        AC_MSG_WARN([[PMIX_VAR_SCOPE_POP] popped too many PMIX configure scopes.])
-        AC_MSG_WARN([This usually indicates an error in configure.])
-        AC_MSG_ERROR([Cannot continue])
-    fi
-
-    # Get the variable names from that index
-    pmix_str="pmix_str=\"\$pmix_scope_$pmix_scope_index\""
-    eval $pmix_str
-
-    # Iterate over all the variables and unset them all
-    for pmix_var in $pmix_str; do
-        unset $pmix_var
-    done
-])dnl
-
+m4_copy([OAC_VAR_SCOPE_PUSH], [PMIX_VAR_SCOPE_PUSH])
+m4_copy([OAC_VAR_SCOPE_POP], [PMIX_VAR_SCOPE_POP])
 
 dnl #######################################################################
 dnl #######################################################################
@@ -663,7 +382,7 @@ AC_DEFUN([PMIX_COMPUTE_MAX_VALUE], [
                     overflow=1
                 fi
             else
-                # stil negative.  Time to give up.
+                # still negative.  Time to give up.
                 overflow=1
             fi
             pmix_num_bits=0

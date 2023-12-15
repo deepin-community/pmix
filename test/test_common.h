@@ -6,7 +6,7 @@
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2015-2018 Mellanox Technologies, Inc.
  *                         All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -19,7 +19,7 @@
 #define TEST_COMMON_H
 
 #include "src/include/pmix_config.h"
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -30,7 +30,7 @@
 
 #include "src/class/pmix_list.h"
 #include "src/include/pmix_globals.h"
-#include "src/util/argv.h"
+#include "src/util/pmix_argv.h"
 
 #define TEST_NAMESPACE  "smoky_nspace"
 #define TEST_CREDENTIAL "dummy"
@@ -99,11 +99,11 @@ extern FILE *file;
         char *fname = malloc(strlen(prefix) + MAX_DIGIT_LEN + 2);       \
         sprintf(fname, "%s.%d.%d", prefix, ns_id, rank);                \
         file = fopen(fname, "w");                                       \
-        free(fname);                                                    \
         if (NULL == file) {                                             \
             fprintf(stderr, "Cannot open file %s for writing!", fname); \
             exit(1);                                                    \
         }                                                               \
+        free(fname);                                                    \
     }
 
 #define TEST_CLOSE_FILE()     \
@@ -286,7 +286,6 @@ typedef struct {
                 }                                                                                 \
             }                                                                                     \
         } else {                                                                                  \
-            int _count;                                                                           \
             _cbdata.in_progress = 1;                                                              \
             PMIX_VALUE_CREATE(_val, 1);                                                           \
             _cbdata.kv = _val;                                                                    \
@@ -295,13 +294,11 @@ typedef struct {
                 TEST_VERBOSE(("%s:%d: PMIx_Get_nb failed: %s from %s:%d, key=%s", my_nspace,      \
                               my_rank, PMIx_Error_string(rc), ns, r, _key));                      \
             } else {                                                                              \
-                _count = 0;                                                                       \
                 while (_cbdata.in_progress) {                                                     \
                     struct timespec ts;                                                           \
                     ts.tv_sec = 0;                                                                \
                     ts.tv_nsec = 100;                                                             \
                     nanosleep(&ts, NULL);                                                         \
-                    _count++;                                                                     \
                 }                                                                                 \
                 rc = _cbdata.status;                                                              \
                 PMIX_ACQUIRE_OBJECT(&_cbdata);                                                    \
@@ -339,7 +336,7 @@ typedef struct {
                 bool _value = 1;                                                               \
                 PMIX_INFO_CREATE(_info, 1);                                                    \
                 pmix_strncpy(_info->key, PMIX_COLLECT_DATA, PMIX_MAX_KEYLEN);                \
-                pmix_value_load(&_info->value, &_value, PMIX_BOOL);                            \
+                PMIx_Value_load(&_info->value, &_value, PMIX_BOOL);                            \
                 _ninfo = 1;                                                                    \
             }                                                                                  \
             rc = PMIx_Fence(pcs, nprocs, _info, _ninfo);                                       \

@@ -15,7 +15,7 @@
  *                         reserved.
  * Copyright (c) 2013-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2018      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -48,19 +48,16 @@
 #ifdef HAVE_DIRENT_H
 #    include <dirent.h>
 #endif
-#ifdef HAVE_SYS_SYSCTL_H
-#    include <sys/sysctl.h>
-#endif
 
 #include "src/client/pmix_client_ops.h"
 #include "src/include/pmix_socket_errno.h"
 #include "src/mca/bfrops/base/base.h"
 #include "src/mca/gds/gds.h"
 #include "src/server/pmix_server_ops.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/os_path.h"
-#include "src/util/show_help.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_os_path.h"
+#include "src/util/pmix_show_help.h"
 
 #include "ptl_client.h"
 #include "src/mca/ptl/base/base.h"
@@ -105,7 +102,7 @@ static pmix_status_t connect_to_peer(struct pmix_peer_t *pr, pmix_info_t *info, 
             ++suri;
             evar = info[n].value.data.string;
             /* set the peer's module and type */
-            tmp = pmix_argv_split(evar, ':');
+            tmp = PMIx_Argv_split(evar, ':');
             rc = PMIX_ERR_BAD_PARAM;
             for (m = 0; NULL != tmp[m]; m++) {
                 rc = pmix_ptl_base_set_peer(peer, tmp[m]);
@@ -113,7 +110,7 @@ static pmix_status_t connect_to_peer(struct pmix_peer_t *pr, pmix_info_t *info, 
                     break;
                 }
             }
-            pmix_argv_free(tmp);
+            PMIx_Argv_free(tmp);
             if (PMIX_SUCCESS != rc) {
                 return rc;
             }

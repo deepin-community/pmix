@@ -6,7 +6,7 @@
  * Copyright (c) 2016-2021 IBM Corporation.  All rights reserved.
  * Copyright (c) 2019      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -28,20 +28,20 @@
 #include "src/include/pmix_stdint.h"
 
 #include "include/pmix.h"
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 #include "include/pmix_server.h"
 
 #include "src/mca/bfrops/bfrops.h"
 #include "src/mca/pfexec/base/base.h"
 #include "src/mca/ptl/ptl.h"
-#include "src/threads/threads.h"
-#include "src/util/argv.h"
-#include "src/util/basename.h"
-#include "src/util/error.h"
-#include "src/util/name_fns.h"
-#include "src/util/output.h"
-#include "src/util/os_dirpath.h"
-#include "src/util/printf.h"
+#include "src/threads/pmix_threads.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_basename.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_name_fns.h"
+#include "src/util/pmix_output.h"
+#include "src/util/pmix_os_dirpath.h"
+#include "src/util/pmix_printf.h"
 
 #include "src/client/pmix_client_ops.h"
 #include "src/include/pmix_globals.h"
@@ -142,11 +142,11 @@ static void process_cache(int sd, short args, void *cbdata)
         }
         /* never forward back to the source! This can happen if the source
          * is a launcher */
-        if (PMIX_CHECK_PROCID(&iof->source, &req->requestor->info->pname)) {
+        if (PMIX_CHECK_NAMES(&iof->source, &req->requestor->info->pname)) {
             continue;
         }
         /* never forward to myself */
-        if (PMIX_CHECK_PROCID(&req->requestor->info->pname, &pmix_globals.myid)) {
+        if (PMIX_CHECK_NAMES(&req->requestor->info->pname, &pmix_globals.myid)) {
             continue;
         }
         /* if the source does not match the request, then ignore it */
@@ -608,7 +608,7 @@ pmix_status_t PMIx_IOF_push(const pmix_proc_t targets[], size_t ntargets, pmix_b
                              * filedescriptor is not a tty, don't worry about it
                              * and always stay connected.
                              */
-                            pmix_event_signal_set(pmix_globals.evbase, &stdinsig_ev, SIGCONT,
+                            pmix_event_signal_set(pmix_globals.evauxbase, &stdinsig_ev, SIGCONT,
                                                   pmix_iof_stdin_cb, NULL);
 
                             /* setup a read event to read stdin, but don't activate it yet. The
@@ -664,7 +664,8 @@ pmix_status_t PMIx_IOF_push(const pmix_proc_t targets[], size_t ntargets, pmix_b
 
     /* if we are not a server, then we send the provided
      * data to our server for processing */
-    if (!PMIX_PEER_IS_SERVER(pmix_globals.mypeer) || PMIX_PEER_IS_LAUNCHER(pmix_globals.mypeer)) {
+    if (!PMIX_PEER_IS_SERVER(pmix_globals.mypeer) ||
+        PMIX_PEER_IS_LAUNCHER(pmix_globals.mypeer)) {
         msg = PMIX_NEW(pmix_buffer_t);
         if (NULL == msg) {
             return PMIX_ERR_NOMEM;
@@ -756,6 +757,12 @@ static pmix_iof_write_event_t* pmix_iof_setup(pmix_namespace_t *nptr,
     char *outdir, *outfile;
     int np, numdigs, fdout;
     pmix_iof_sink_t *snk;
+    pmix_proc_t src;
+
+    pmix_output_verbose(5, pmix_server_globals.iof_output,
+                        "IOF SETUP %s %u",
+                        nptr->nspace, rank);
+    PMIX_LOAD_PROCID(&src, nptr->nspace, rank);
 
     np = nptr->nprocs / 10;
     /* determine the number of digits required for max vpid */
@@ -792,10 +799,10 @@ static pmix_iof_write_event_t* pmix_iof_setup(pmix_namespace_t *nptr,
             /* define a sink to that file descriptor */
             snk = PMIX_NEW(pmix_iof_sink_t);
             if (nptr->iof_flags.merge) {
-                PMIX_IOF_SINK_DEFINE(snk, &pmix_globals.myid, fdout,
+                PMIX_IOF_SINK_DEFINE(snk, &src, fdout,
                                      PMIX_FWD_ALL_CHANNELS, pmix_iof_write_handler);
             } else {
-                PMIX_IOF_SINK_DEFINE(snk, &pmix_globals.myid, fdout,
+                PMIX_IOF_SINK_DEFINE(snk, &src, fdout,
                                      PMIX_FWD_STDOUT_CHANNEL, pmix_iof_write_handler);
             }
             pmix_list_append(&nptr->sinks, &snk->super);
@@ -814,7 +821,7 @@ static pmix_iof_write_event_t* pmix_iof_setup(pmix_namespace_t *nptr,
             }
             /* define a sink to that file descriptor */
             snk = PMIX_NEW(pmix_iof_sink_t);
-            PMIX_IOF_SINK_DEFINE(snk, &pmix_globals.myid, fdout,
+            PMIX_IOF_SINK_DEFINE(snk, &src, fdout,
                                  PMIX_FWD_STDERR_CHANNEL, pmix_iof_write_handler);
             pmix_list_append(&nptr->sinks, &snk->super);
             free(outdir);
@@ -860,10 +867,10 @@ static pmix_iof_write_event_t* pmix_iof_setup(pmix_namespace_t *nptr,
             /* define a sink to that file descriptor */
             snk = PMIX_NEW(pmix_iof_sink_t);
             if (nptr->iof_flags.merge) {
-                PMIX_IOF_SINK_DEFINE(snk, &pmix_globals.myid, fdout,
+                PMIX_IOF_SINK_DEFINE(snk, &src, fdout,
                                      PMIX_FWD_ALL_CHANNELS, pmix_iof_write_handler);
             } else {
-                PMIX_IOF_SINK_DEFINE(snk, &pmix_globals.myid, fdout,
+                PMIX_IOF_SINK_DEFINE(snk, &src, fdout,
                                      PMIX_FWD_STDOUT_CHANNEL, pmix_iof_write_handler);
             }
             pmix_list_append(&nptr->sinks, &snk->super);
@@ -893,7 +900,7 @@ static pmix_iof_write_event_t* pmix_iof_setup(pmix_namespace_t *nptr,
             }
             /* define a sink to that file descriptor */
             snk = PMIX_NEW(pmix_iof_sink_t);
-            PMIX_IOF_SINK_DEFINE(snk, &pmix_globals.myid, fdout,
+            PMIX_IOF_SINK_DEFINE(snk, &src, fdout,
                                  PMIX_FWD_STDERR_CHANNEL, pmix_iof_write_handler);
             pmix_list_append(&nptr->sinks, &snk->super);
             return &snk->wev;
@@ -908,6 +915,12 @@ void pmix_iof_check_flags(pmix_info_t *info, pmix_iof_flags_t *flags)
     if (PMIX_CHECK_KEY(info, PMIX_IOF_TAG_OUTPUT) ||
         PMIX_CHECK_KEY(info, PMIX_TAG_OUTPUT)) {
         flags->tag = PMIX_INFO_TRUE(info);
+        flags->set = true;
+    } else if (PMIX_CHECK_KEY(info, PMIX_IOF_TAG_DETAILED_OUTPUT)) {
+        flags->tag_detailed = PMIX_INFO_TRUE(info);
+        flags->set = true;
+    } else if (PMIX_CHECK_KEY(info, PMIX_IOF_TAG_FULLNAME_OUTPUT)) {
+        flags->tag_fullname = PMIX_INFO_TRUE(info);
         flags->set = true;
     } else if (PMIX_CHECK_KEY(info, PMIX_IOF_RANK_OUTPUT)) {
         flags->rank = PMIX_INFO_TRUE(info);
@@ -943,6 +956,9 @@ void pmix_iof_check_flags(pmix_info_t *info, pmix_iof_flags_t *flags)
         flags->local_output = PMIX_INFO_TRUE(info);
         flags->set = true;
         flags->local_output_given = true;
+    } else if (PMIX_CHECK_KEY(info, PMIX_IOF_OUTPUT_RAW)) {
+        flags->raw = PMIX_INFO_TRUE(info);
+        flags->set = true;
     } else if (PMIX_CHECK_KEY(info, PMIX_IOF_FILE_PATTERN)) {
         flags->pattern = PMIX_INFO_TRUE(info);
         /* don't mark as set here as this is just a qualifier */
@@ -979,11 +995,11 @@ pmix_status_t pmix_iof_process_iof(pmix_iof_channel_t channels, const pmix_proc_
     if (NULL == req->requestor->info || req->requestor->finalized) {
         return PMIX_SUCCESS;
     }
-    if (PMIX_CHECK_PROCID(source, &req->requestor->info->pname)) {
+    if (PMIX_CHECK_NAMES(source, &req->requestor->info->pname)) {
         return PMIX_SUCCESS;
     }
     /* never forward to myself */
-    if (PMIX_CHECK_PROCID(&req->requestor->info->pname, &pmix_globals.myid)) {
+    if (PMIX_CHECK_NAMES(&req->requestor->info->pname, &pmix_globals.myid)) {
         return PMIX_SUCCESS;
     }
 
@@ -1045,22 +1061,445 @@ pmix_status_t pmix_iof_process_iof(pmix_iof_channel_t channels, const pmix_proc_
     return PMIX_OPERATION_SUCCEEDED;
 }
 
-pmix_status_t pmix_iof_write_output(const pmix_proc_t *name, pmix_iof_channel_t stream,
-                                    const pmix_byte_object_t *bo)
+static pmix_status_t write_output_line(const pmix_proc_t *name,
+                                       pmix_iof_write_event_t *channel,
+                                       pmix_iof_flags_t *myflags,
+                                       pmix_iof_channel_t stream,
+                                       bool copystdout, bool copystderr,
+                                       const pmix_byte_object_t *bo)
 {
     char starttag[PMIX_IOF_BASE_TAG_MAX], endtag[PMIX_IOF_BASE_TAG_MAX], *suffix;
     char timestamp[PMIX_IOF_BASE_TAG_MAX], outtag[PMIX_IOF_BASE_TAG_MAX];
     char begintag[PMIX_IOF_BASE_TAG_MAX];
-    pmix_iof_write_output_t *output;
-    size_t i;
-    int j, k, taglen, endtaglen, num_buffered;
-    bool endtagged;
-    char qprint[10];
+    char **segments = NULL;
+    pmix_iof_write_output_t *output, *copy;
+    size_t offset, j, n, m, bufsize;
+    char *buffer, qprint[15], *cptr;
+    const char *usestring;
+    bool bufcopy;
+    pmix_cb_t cb2;
+    pmix_info_t optional;
+    pmix_kval_t *kv;
+    pid_t pid;
+    char *pidstring;
+    pmix_status_t rc;
+
+    /* setup output object */
+    output = PMIX_NEW(pmix_iof_write_output_t);
+    memset(begintag, 0, PMIX_IOF_BASE_TAG_MAX);
+    memset(starttag, 0, PMIX_IOF_BASE_TAG_MAX);
+    memset(endtag, 0, PMIX_IOF_BASE_TAG_MAX);
+    memset(timestamp, 0, PMIX_IOF_BASE_TAG_MAX);
+    memset(outtag, 0, PMIX_IOF_BASE_TAG_MAX);
+    PMIX_INFO_LOAD(&optional, PMIX_OPTIONAL, NULL, PMIX_BOOL);
+
+    /* write output data to the corresponding tag */
+    if (PMIX_FWD_STDIN_CHANNEL & stream) {
+        /* copy over the data to be written */
+        if (0 < bo->size) {
+            /* don't copy 0 bytes - we just need to pass
+             * the zero bytes so the fd can be closed
+             * after it writes everything out
+             */
+            output->data = (char*)malloc(bo->size);
+            memcpy(output->data, bo->bytes, bo->size);
+        }
+        output->numbytes = bo->size;
+        goto process;
+    } else if (PMIX_FWD_STDOUT_CHANNEL & stream) {
+        /* write the bytes to stdout */
+        suffix = "stdout";
+    } else if (PMIX_FWD_STDERR_CHANNEL & stream) {
+        /* write the bytes to stderr */
+        suffix = "stderr";
+    } else if (PMIX_FWD_STDDIAG_CHANNEL & stream) {
+        /* write the bytes to stderr */
+        suffix = "stddiag";
+    } else {
+        /* error - this should never happen */
+        PMIX_ERROR_LOG(PMIX_ERR_VALUE_OUT_OF_BOUNDS);
+        pmix_output_verbose(1, pmix_client_globals.iof_output, "%s stream %0x",
+                             PMIX_NAME_PRINT(&pmix_globals.myid), stream);
+        return PMIX_ERR_VALUE_OUT_OF_BOUNDS;
+    }
+
+    /* if 0 bytes, then just pass it so the fd can be closed
+     * after it writes everything out
+     */
+    if (0 == bo->size) {
+        output->numbytes = 0;
+        goto process;
+    }
+
+    if (!myflags->set) {
+        /* the data is not to be tagged - just copy it
+         * and move on to processing
+         */
+        output->data = (char*)malloc(bo->size);
+        memcpy(output->data, bo->bytes, bo->size);
+        output->numbytes = bo->size;
+        goto process;
+    }
+
+    /* if this is to be xml tagged, create a tag with the correct syntax - we do not allow
+     * timestamping of xml output
+     */
+    if (myflags->xml) {
+        if (myflags->tag) {
+            /* find the '@' delimiter in the nspace */
+            cptr = strrchr(name->nspace, '@');
+            if (NULL == cptr) {
+                usestring = name->nspace;  // just use the whole thing
+            } else {
+                ++cptr;
+                usestring = cptr; // use the jobid portion
+            }
+            pmix_snprintf(begintag, PMIX_IOF_BASE_TAG_MAX,
+                          "<%s %s=\"%s\" rank=\"%s\"", suffix,
+                          (usestring == name->nspace) ? "nspace" : "jobid",
+                          usestring, PMIX_RANK_PRINT(name->rank));
+        } else if (myflags->tag_fullname) {
+            pmix_snprintf(begintag, PMIX_IOF_BASE_TAG_MAX,
+                          "<%s nspace=\"%s\" rank=\"%s\"", suffix,
+                          name->nspace, PMIX_RANK_PRINT(name->rank));
+        } else if (myflags->tag_detailed) {
+            /* we need the hostname and pid of the source */
+            PMIX_CONSTRUCT(&cb2, pmix_cb_t);
+            cb2.proc = (pmix_proc_t*)name;
+            cb2.key = PMIX_HOSTNAME;
+            cb2.info = &optional;
+            cb2.ninfo = 1;
+            PMIX_GDS_FETCH_KV(rc, pmix_globals.mypeer, &cb2);
+            if (PMIX_SUCCESS == rc || PMIX_OPERATION_SUCCEEDED == rc) {
+                kv = (pmix_kval_t*)pmix_list_remove_first(&cb2.kvs);
+                if (NULL != kv) {  // should never be NULL
+                    cptr = strdup(kv->value->data.string);
+                    PMIX_RELEASE(kv);
+                } else {
+                    cptr = strdup("unknown");
+                }
+            } else {
+                cptr = strdup("unknown");
+            }
+            PMIX_DESTRUCT(&cb2);
+            /* get the pid */
+            PMIX_CONSTRUCT(&cb2, pmix_cb_t);
+            cb2.proc = (pmix_proc_t*)name;
+            cb2.key = PMIX_PROC_PID;
+            cb2.info = &optional;
+            cb2.ninfo = 1;
+            PMIX_GDS_FETCH_KV(rc, pmix_globals.mypeer, &cb2);
+            if (PMIX_SUCCESS == rc || PMIX_OPERATION_SUCCEEDED == rc) {
+                kv = (pmix_kval_t*)pmix_list_remove_first(&cb2.kvs);
+                if (NULL != kv) { // should never be NULL
+                    PMIX_VALUE_GET_NUMBER(rc, kv->value, pid, pid_t);
+                    PMIX_RELEASE(kv);
+                    if (PMIX_SUCCESS != rc) {
+                        pidstring = strdup("unknown");
+                    } else {
+                        pmix_asprintf(&pidstring, "%u", pid);
+                    }
+                } else {
+                    pidstring = strdup("unknown");
+                }
+            } else {
+                pidstring = strdup("unknown");
+            }
+            PMIX_DESTRUCT(&cb2);
+
+            pmix_snprintf(begintag, PMIX_IOF_BASE_TAG_MAX,
+                          "<%s nspace=\"%s\" rank=\"%s\"[\"%s\":\"%s\"",
+                          suffix, name->nspace,
+                          PMIX_RANK_PRINT(name->rank),
+                          cptr, pidstring);
+            free(cptr);
+            free(pidstring);
+        } else if (myflags->rank) {
+            pmix_snprintf(begintag, PMIX_IOF_BASE_TAG_MAX,
+                     "<%s rank=\"%s\"", suffix,
+                     PMIX_RANK_PRINT(name->rank));
+        } else if (myflags->timestamp) {
+            pmix_snprintf(begintag, PMIX_IOF_BASE_TAG_MAX,
+                     "<%s rank=\"%s\"", suffix,
+                     PMIX_RANK_PRINT(name->rank));
+        } else {
+            pmix_snprintf(begintag, PMIX_IOF_BASE_TAG_MAX,
+                     "<%s rank=\"%s\"", suffix,
+                     PMIX_RANK_PRINT(name->rank));
+        }
+        pmix_snprintf(endtag, PMIX_IOF_BASE_TAG_MAX,
+                 "</%s>", suffix);
+    } else {
+        if (myflags->tag) {
+            /* find the '@' delimiter in the nspace */
+            cptr = strrchr(name->nspace, '@');
+            if (NULL == cptr) {
+                usestring = name->nspace;  // just use the whole thing
+            } else {
+                ++cptr;
+                usestring = cptr; // use the jobid portion
+            }
+            pmix_snprintf(outtag, PMIX_IOF_BASE_TAG_MAX,
+                          "[%s,%s]<%s>: ",
+                          usestring,
+                          PMIX_RANK_PRINT(name->rank),
+                          suffix);
+        } else if (myflags->tag_detailed) {
+            if (myflags->tag_fullname) {
+                usestring = name->nspace;
+            } else {
+                /* find the '@' delimiter in the nspace */
+                cptr = strrchr(name->nspace, '@');
+                if (NULL == cptr) {
+                    usestring = name->nspace;  // just use the whole thing
+                } else {
+                    ++cptr;
+                    usestring = cptr; // use the jobid portion
+                }
+            }
+            /* we need the hostname and pid of the source */
+            PMIX_CONSTRUCT(&cb2, pmix_cb_t);
+            cb2.proc = (pmix_proc_t*)name;
+            cb2.key = PMIX_HOSTNAME;
+            cb2.info = &optional;
+            cb2.ninfo = 1;
+            PMIX_GDS_FETCH_KV(rc, pmix_globals.mypeer, &cb2);
+            if (PMIX_SUCCESS == rc || PMIX_OPERATION_SUCCEEDED == rc) {
+                kv = (pmix_kval_t*)pmix_list_remove_first(&cb2.kvs);
+                cptr = strdup(kv->value->data.string);
+                PMIX_RELEASE(kv);
+            } else {
+                cptr = strdup("unknown");
+            }
+            PMIX_DESTRUCT(&cb2);
+            /* get the pid */
+            PMIX_CONSTRUCT(&cb2, pmix_cb_t);
+            cb2.proc = (pmix_proc_t*)name;
+            cb2.key = PMIX_PROC_PID;
+            cb2.info = &optional;
+            cb2.ninfo = 1;
+            PMIX_GDS_FETCH_KV(rc, pmix_globals.mypeer, &cb2);
+            if (PMIX_SUCCESS == rc || PMIX_OPERATION_SUCCEEDED == rc) {
+                kv = (pmix_kval_t*)pmix_list_remove_first(&cb2.kvs);
+                PMIX_VALUE_GET_NUMBER(rc, kv->value, pid, pid_t);
+                PMIX_RELEASE(kv);
+                if (PMIX_SUCCESS != rc) {
+                    pidstring = strdup("unknown");
+                } else {
+                    pmix_asprintf(&pidstring, "%u", pid);
+                }
+            } else {
+                pidstring = strdup("unknown");
+            }
+            PMIX_DESTRUCT(&cb2);
+            pmix_snprintf(outtag, PMIX_IOF_BASE_TAG_MAX,
+                          "[%s,%s][%s:%s]<%s>: ",
+                          usestring,
+                          PMIX_RANK_PRINT(name->rank),
+                          cptr, pidstring,
+                          suffix);
+            free(cptr);
+            free(pidstring);
+        } else if (myflags->tag_fullname) {
+            pmix_snprintf(outtag, PMIX_IOF_BASE_TAG_MAX,
+                          "[%s,%s]<%s>: ",
+                          name->nspace,
+                          PMIX_RANK_PRINT(name->rank),
+                          suffix);
+        } else if (myflags->rank) {
+            pmix_snprintf(outtag, PMIX_IOF_BASE_TAG_MAX,
+                     "[%s]<%s>: ",
+                     PMIX_RANK_PRINT(name->rank), suffix);
+        }
+    }
+
+    /* if we are to timestamp output, start the tag with that */
+    if (myflags->timestamp) {
+        time_t mytime;
+        /* get the timestamp */
+        time(&mytime);
+        cptr = ctime(&mytime);
+        cptr[strlen(cptr) - 1] = '\0'; /* remove trailing newline */
+
+        if (myflags->xml && !myflags->tag && !myflags->rank) {
+            pmix_snprintf(timestamp, PMIX_IOF_BASE_TAG_MAX,
+                     " timestamp=\"%s\"", cptr);
+        } else if (myflags->xml && (myflags->tag || myflags->rank)) {
+            pmix_snprintf(timestamp, PMIX_IOF_BASE_TAG_MAX,
+                     " timestamp=\"%s\"", cptr);
+        } else if (myflags->tag || myflags->rank) {
+            pmix_snprintf(timestamp, PMIX_IOF_BASE_TAG_MAX, "[%s]", cptr);
+        } else {
+            pmix_snprintf(timestamp, PMIX_IOF_BASE_TAG_MAX, "[%s]<%s>: ", cptr, suffix);
+        }
+    }
+
+    /* start with the starttag */
+    if (0 < strlen(begintag)) {
+        PMIx_Argv_append_nosize(&segments, begintag);
+    }
+    /* add the timestamp */
+    if (0 < strlen(timestamp)) {
+        PMIx_Argv_append_nosize(&segments, timestamp);
+    }
+    /* add the output tag */
+    if (0 < strlen(outtag)) {
+        PMIx_Argv_append_nosize(&segments, outtag);
+    }
+    /* if xml, end the starttag with a '>' */
+    if (myflags->xml) {
+        PMIx_Argv_append_nosize(&segments, ">");
+    }
+
+    /* if we are doing XML, then we need to replace key characters */
+    if (myflags->xml) {
+        bufsize = bo->size;
+        for (n = 0; n < bo->size; n++) {
+            if ('&' == bo->bytes[n]) {
+                bufsize += 5;
+            } else if ('<' == bo->bytes[n] || '>' == bo->bytes[n]) {
+                bufsize += 4;
+            } else if (!isprint(bo->bytes[n])) {
+                pmix_snprintf(qprint, 10, "&#%03d;", (int) bo->bytes[n]);
+                bufsize += strlen(qprint);
+            }
+        }
+        if (bo->size < bufsize) {
+            /* we need to increase the size of our buffer to handle the
+             * extra characters we need to add to represent these special
+             * cases */
+            buffer = malloc(bufsize);
+            memset(buffer, 0, bufsize);
+            bufcopy = true;
+            m = 0;
+            for (n = 0; n < bo->size; n++) {
+                if ('&' == bo->bytes[n]) {
+                    buffer[m++] = '&';
+                    buffer[m++] = 'a';
+                    buffer[m++] = 'p';
+                    buffer[m++] = ';';
+                } else if ('<' == bo->bytes[n]) {
+                    buffer[m++] = '&';
+                    buffer[m++] = 'l';
+                    buffer[m++] = 't';
+                    buffer[m++] = ';';
+                } else if ('>' == bo->bytes[n]) {
+                    buffer[m++] = '&';
+                    buffer[m++] = 'g';
+                    buffer[m++] = 't';
+                    buffer[m++] = ';';
+                } else if (!isprint(bo->bytes[n])) {
+                    pmix_snprintf(qprint, 10, "&#%03d;", (int) bo->bytes[n]);
+                    for (j = 0; j < strlen(qprint); j++) {
+                        buffer[m++] = qprint[j];
+                    }
+                } else {
+                    buffer[m++] = bo->bytes[n];
+                }
+            }
+        } else {
+            buffer = bo->bytes;
+            bufsize = bo->size;
+            bufcopy = false;
+        }
+    } else {
+        buffer = bo->bytes;
+        bufsize = bo->size;
+        bufcopy = false;
+    }
+
+    /* assemble the output line */
+    if (NULL != segments) {
+        for (n=0; NULL != segments[n]; n++) {
+            output->numbytes += strlen(segments[n]);
+        }
+    }
+    output->numbytes += bufsize;
+    output->numbytes += strlen(endtag);
+    if (myflags->xml) {
+        // add a spot for a trailing newline
+        output->numbytes++;
+    }
+
+    output->data = (char*)malloc(output->numbytes);
+    offset = 0;
+    if (NULL != segments) {
+        for (n=0; NULL != segments[n]; n++) {
+            memcpy(&output->data[offset], segments[n], strlen(segments[n]));
+            offset += strlen(segments[n]);
+        }
+    }
+    memcpy(&output->data[offset], buffer, bufsize);
+    offset += bufsize;
+    if (0 < strlen(endtag)) {
+        memcpy(&output->data[offset], endtag, strlen(endtag));
+    }
+    if (myflags->xml) {
+        output->data[output->numbytes-1] = '\n';
+    }
+    if (bufcopy) {
+        free(buffer);
+    }
+
+process:
+    /* add this data to the write list for this fd */
+    pmix_list_append(&channel->outputs, &output->super);
+
+    if (copystdout){
+        copy = PMIX_NEW(pmix_iof_write_output_t);
+        copy->data = (char *) malloc(output->numbytes);
+        memcpy(copy->data, output->data, output->numbytes);
+        copy->numbytes = output->numbytes;
+        pmix_list_append(&pmix_client_globals.iof_stdout.wev.outputs, &copy->super);
+        if (!pmix_client_globals.iof_stdout.wev.pending) {
+            PMIX_IOF_SINK_ACTIVATE(&pmix_client_globals.iof_stdout.wev);
+        }
+    }
+    if (copystderr){
+        copy = PMIX_NEW(pmix_iof_write_output_t);
+        copy->data = (char *) malloc(output->numbytes);
+        memcpy(copy->data, output->data, output->numbytes);
+        copy->numbytes = output->numbytes;
+        pmix_list_append(&pmix_client_globals.iof_stderr.wev.outputs, &copy->super);
+        if (!pmix_client_globals.iof_stderr.wev.pending) {
+            PMIX_IOF_SINK_ACTIVATE(&pmix_client_globals.iof_stderr.wev);
+        }
+    }
+
+    /* is the write event issued? */
+    if (!channel->pending) {
+        /* issue it */
+        pmix_output_verbose(1, pmix_client_globals.iof_output,
+                             "%s write:output adding write event",
+                             PMIX_NAME_PRINT(&pmix_globals.myid));
+        PMIX_IOF_SINK_ACTIVATE(channel);
+    }
+
+    return PMIX_SUCCESS;
+}
+
+pmix_status_t pmix_iof_write_output(const pmix_proc_t *name, pmix_iof_channel_t stream,
+                                    const pmix_byte_object_t *bo)
+{
+    pmix_status_t rc;
+    size_t n, start;
+    pmix_byte_object_t bopass;
     pmix_iof_write_event_t *channel;
     pmix_iof_flags_t myflags;
     pmix_namespace_t *nptr, *ns;
-    pmix_iof_sink_t *sink;
     bool outputio;
+    bool copystdout = false;
+    bool copystderr = false;
+    pmix_iof_sink_t *sink;
+    pmix_iof_residual_t *res;
+    char *inputdata;
+    size_t inputsize;
+    bool copied;
+
+    /* stdin doesn't come thru here*/
+    if (PMIX_FWD_STDIN_CHANNEL & stream) {
+        return PMIX_ERR_BAD_PARAM;
+    }
 
     /* find the nspace for this source */
     nptr = NULL;
@@ -1101,11 +1540,19 @@ pmix_status_t pmix_iof_write_output(const pmix_proc_t *name, pmix_iof_channel_t 
                         return PMIX_ERR_IOF_FAILURE;
                     }
                 }
+                if (!nptr->iof_flags.nocopy && pmix_globals.iof_flags.local_output) {
+                    if (PMIX_FWD_STDOUT_CHANNEL & stream) {
+                        copystdout = true;
+                    } else {
+                        copystderr = true;
+                    }
+                }
             } else if (NULL != nptr->iof_flags.file) {
                 /* see if we already have one - we reuse the same sink for
                  * all streams */
                 PMIX_LIST_FOREACH(sink, &nptr->sinks, pmix_iof_sink_t) {
-                    if (sink->name.rank == name->rank) {
+                    if (sink->name.rank == name->rank &&
+                        ((stream & sink->tag) || nptr->iof_flags.merge)) {
                         channel = &sink->wev;
                         break;
                     }
@@ -1115,6 +1562,13 @@ pmix_status_t pmix_iof_write_output(const pmix_proc_t *name, pmix_iof_channel_t 
                     channel = pmix_iof_setup(nptr, name->rank, stream);
                     if (NULL == channel) {
                         return PMIX_ERR_IOF_FAILURE;
+                    }
+                }
+                if (!nptr->iof_flags.nocopy && pmix_globals.iof_flags.local_output) {
+                    if (PMIX_FWD_STDOUT_CHANNEL & stream) {
+                        copystdout = true;
+                    } else {
+                        copystderr = true;
                     }
                 }
             }
@@ -1134,282 +1588,112 @@ pmix_status_t pmix_iof_write_output(const pmix_proc_t *name, pmix_iof_channel_t 
         if (PMIX_FWD_STDOUT_CHANNEL & stream) {
             channel = &pmix_client_globals.iof_stdout.wev;
         } else {
-            channel = &pmix_client_globals.iof_stderr.wev;
+            if(!myflags.merge) {
+                channel = &pmix_client_globals.iof_stderr.wev;
+            }
+            else {
+                channel = &pmix_client_globals.iof_stdout.wev;
+            }
         }
     }
 
-    PMIX_OUTPUT_VERBOSE((1, pmix_client_globals.iof_output,
+    pmix_output_verbose(1, pmix_client_globals.iof_output,
                          "%s write:output setting up to write %lu bytes to %s for %s on fd %d",
                          PMIX_NAME_PRINT(&pmix_globals.myid), (unsigned long) bo->size,
                          PMIx_IOF_channel_string(stream), PMIX_NAME_PRINT(name),
-                         (NULL == channel) ? -1 : channel->fd));
+                         (NULL == channel) ? -1 : channel->fd);
 
-    /* setup output object */
-    output = PMIX_NEW(pmix_iof_write_output_t);
-    memset(begintag, 0, PMIX_IOF_BASE_TAG_MAX);
-    memset(starttag, 0, PMIX_IOF_BASE_TAG_MAX);
-    memset(endtag, 0, PMIX_IOF_BASE_TAG_MAX);
-    memset(timestamp, 0, PMIX_IOF_BASE_TAG_MAX);
-    memset(outtag, 0, PMIX_IOF_BASE_TAG_MAX);
-
-    /* write output data to the corresponding tag */
-    if (PMIX_FWD_STDIN_CHANNEL & stream) {
-        /* copy over the data to be written */
-        if (0 < bo->size) {
-            /* don't copy 0 bytes - we just need to pass
-             * the zero bytes so the fd can be closed
-             * after it writes everything out
-             */
-            memcpy(output->data, bo->bytes, bo->size);
-        }
-        output->numbytes = bo->size;
-        goto process;
-    } else if (PMIX_FWD_STDOUT_CHANNEL & stream) {
-        /* write the bytes to stdout */
-        suffix = "stdout";
-    } else if (PMIX_FWD_STDERR_CHANNEL & stream) {
-        /* write the bytes to stderr */
-        suffix = "stderr";
-    } else if (PMIX_FWD_STDDIAG_CHANNEL & stream) {
-        /* write the bytes to stderr */
-        suffix = "stddiag";
-    } else {
-        /* error - this should never happen */
-        PMIX_ERROR_LOG(PMIX_ERR_VALUE_OUT_OF_BOUNDS);
-        PMIX_OUTPUT_VERBOSE((1, pmix_client_globals.iof_output, "%s stream %0x",
-                             PMIX_NAME_PRINT(&pmix_globals.myid), stream));
-        return PMIX_ERR_VALUE_OUT_OF_BOUNDS;
-    }
-
-    /* if 0 bytes, then just pass it so the fd can be closed
-     * after it writes everything out
-     */
+    /* zero bytes can just be passed along */
     if (0 == bo->size) {
-        output->numbytes = 0;
-        goto process;
+        rc = write_output_line(name, channel, &myflags, stream,
+                               false, false, bo);
+        return rc;
     }
 
-    if (!myflags.set) {
-        /* the data is not to be tagged - just copy it
-         * and move on to processing
-         */
-        memcpy(output->data, bo->bytes, bo->size);
-        output->numbytes = bo->size;
-        goto process;
-    }
-
-    /* if this is to be xml tagged, create a tag with the correct syntax - we do not allow
-     * timestamping of xml output
-     */
-    if (myflags.xml) {
-        if (myflags.tag) {
-            pmix_snprintf(begintag, PMIX_IOF_BASE_TAG_MAX,
-                     "<%s nspace=\"%s\" rank=\"%s\"", suffix,
-                     name->nspace, PMIX_RANK_PRINT(name->rank));
-        } else if (myflags.rank) {
-            pmix_snprintf(begintag, PMIX_IOF_BASE_TAG_MAX,
-                     "<%s rank=\"%s\"", suffix,
-                     PMIX_RANK_PRINT(name->rank));
-        } else if (myflags.timestamp) {
-            pmix_snprintf(begintag, PMIX_IOF_BASE_TAG_MAX,
-                     "<%s rank=\"%s\"", suffix,
-                     PMIX_RANK_PRINT(name->rank));
-        } else {
-            pmix_snprintf(begintag, PMIX_IOF_BASE_TAG_MAX,
-                     "<%s rank=\"%s\"", suffix,
-                     PMIX_RANK_PRINT(name->rank));
-        }
-        pmix_snprintf(endtag, PMIX_IOF_BASE_TAG_MAX,
-                 "</%s>", suffix);
-    } else {
-        if (myflags.tag) {
-            pmix_snprintf(outtag, PMIX_IOF_BASE_TAG_MAX,
-                     "[%s,%s]<%s>",
-                     name->nspace,
-                     PMIX_RANK_PRINT(name->rank),
-                     suffix);
-        } else if (myflags.rank) {
-            pmix_snprintf(outtag, PMIX_IOF_BASE_TAG_MAX,
-                     "[%s]",
-                     PMIX_RANK_PRINT(name->rank));
+    /* see if we have some residual for this name/stream */
+    inputdata = bo->bytes;
+    inputsize = bo->size;
+    copied = false;
+    PMIX_LIST_FOREACH(res, &pmix_server_globals.iof_residuals, pmix_iof_residual_t) {
+        if (PMIX_CHECK_PROCID(name, &res->name) || (stream & res->stream)) {
+            /* we need to pre-pend the residual data to the new
+             * data so any lines can be completed */
+            inputdata = (char*)malloc(inputsize + res->bo.size);
+            memcpy(inputdata, res->bo.bytes, res->bo.size);
+            memcpy(&inputdata[res->bo.size], bo->bytes, bo->size);
+            inputsize += res->bo.size;
+            copied = true;
+            pmix_list_remove_item(&pmix_server_globals.iof_residuals, &res->super);
+            PMIX_RELEASE(res);
+            break;
         }
     }
 
-    /* if we are to timestamp output, start the tag with that */
-    if (myflags.timestamp) {
-        time_t mytime;
-        char *cptr;
-        /* get the timestamp */
-        time(&mytime);
-        cptr = ctime(&mytime);
-        cptr[strlen(cptr) - 1] = '\0'; /* remove trailing newline */
-
-        if (myflags.xml && !myflags.tag && !myflags.rank) {
-            pmix_snprintf(timestamp, PMIX_IOF_BASE_TAG_MAX,
-                     " timestamp=\"%s\"", cptr);
-        } else if (myflags.xml && (myflags.tag || myflags.rank)) {
-            pmix_snprintf(timestamp, PMIX_IOF_BASE_TAG_MAX,
-                     " timestamp=\"%s\"", cptr);
-        } else if (myflags.tag || myflags.rank) {
-            pmix_snprintf(timestamp, PMIX_IOF_BASE_TAG_MAX, "%s", cptr);
-        } else {
-            pmix_snprintf(timestamp, PMIX_IOF_BASE_TAG_MAX, "%s<%s", cptr, suffix);
+    /* search the input data stream for '\n' */
+    start = 0;
+    for (n=0; n < inputsize; n++) {
+        if ('\n' == inputdata[n]) {
+            bopass.bytes = &inputdata[start];
+            bopass.size = n - start + 1;
+            rc = write_output_line(name, channel, &myflags, stream,
+                                   copystdout, copystderr, &bopass);
+            if (PMIX_SUCCESS != rc) {
+                if (copied) {
+                    free(inputdata);
+                }
+                return rc;
+            }
+            start = n + 1;
         }
     }
 
-    endtaglen = strlen(endtag);
-    endtagged = false;
-    k = 0;
-    /* start with the starttag */
-    taglen = strlen(begintag);
-    for (j = 0; j < taglen && k < PMIX_IOF_BASE_TAG_MAX; j++) {
-        starttag[k++] = begintag[j];
-    }
-    /* add the timestamp */
-    taglen = strlen(timestamp);
-    for (j = 0; j < taglen && k < PMIX_IOF_BASE_TAG_MAX; j++) {
-        starttag[k++] = timestamp[j];
-    }
-    /* add the output tag */
-    taglen = strlen(outtag);
-    for (j = 0; j < taglen && k < PMIX_IOF_BASE_TAG_MAX; j++) {
-        starttag[k++] = outtag[j];
-    }
-    if (PMIX_IOF_BASE_TAG_MAX == k) {
-        return PMIX_ERR_VALUE_OUT_OF_BOUNDS;
-    }
-    /* if xml, end the starttag with a '>' */
-    if (myflags.xml) {
-        starttag[k++] = '>';
-    } else if (myflags.rank) {
-        starttag[k++] = ' ';
-    } else if (myflags.tag || myflags.timestamp) {
-        starttag[k++] = ':';
-    }
-
-    /* transfer to output */
-    k = 0;
-    taglen = strlen(starttag);
-    for (j = 0; j < taglen && k < PMIX_IOF_BASE_TAG_MAX; j++) {
-        output->data[k++] = starttag[j];
-    }
-
-    /* cycle through the data looking for <cr>
-     * and replace those with the tag
-     */
-    for (i = 0; i < bo->size && k < PMIX_IOF_BASE_TAGGED_OUT_MAX; i++) {
-        if (myflags.xml) {
-            if ('&' == bo->bytes[i]) {
-                if (k + 5 >= PMIX_IOF_BASE_TAGGED_OUT_MAX) {
-                    PMIX_ERROR_LOG(PMIX_ERR_OUT_OF_RESOURCE);
-                    goto process;
+    if (start < inputsize) {
+        if (myflags.raw) {
+            bopass.bytes = &inputdata[start];
+            bopass.size = inputsize - start;
+            rc = write_output_line(name, channel, &myflags, stream,
+                                   copystdout, copystderr, &bopass);
+            if (PMIX_SUCCESS != rc) {
+                if (copied) {
+                    free(inputdata);
                 }
-                pmix_snprintf(qprint, 10, "&amp;");
-                for (j = 0; j < (int) strlen(qprint) && k < PMIX_IOF_BASE_TAGGED_OUT_MAX; j++) {
-                    output->data[k++] = qprint[j];
-                }
-            } else if ('<' == bo->bytes[i]) {
-                if (k + 4 >= PMIX_IOF_BASE_TAGGED_OUT_MAX) {
-                    PMIX_ERROR_LOG(PMIX_ERR_OUT_OF_RESOURCE);
-                    goto process;
-                }
-                pmix_snprintf(qprint, 10, "&lt;");
-                for (j = 0; j < (int) strlen(qprint) && k < PMIX_IOF_BASE_TAGGED_OUT_MAX; j++) {
-                    output->data[k++] = qprint[j];
-                }
-            } else if ('>' == bo->bytes[i]) {
-                if (k + 4 >= PMIX_IOF_BASE_TAGGED_OUT_MAX) {
-                    PMIX_ERROR_LOG(PMIX_ERR_OUT_OF_RESOURCE);
-                    goto process;
-                }
-                pmix_snprintf(qprint, 10, "&gt;");
-                for (j = 0; j < (int) strlen(qprint) && k < PMIX_IOF_BASE_TAGGED_OUT_MAX; j++) {
-                    output->data[k++] = qprint[j];
-                }
-            } else if (!isprint(bo->bytes[i])) {
-                /* this is a non-printable character, so escape it too */
-                if (k + 7 >= PMIX_IOF_BASE_TAGGED_OUT_MAX) {
-                    PMIX_ERROR_LOG(PMIX_ERR_OUT_OF_RESOURCE);
-                    goto process;
-                }
-                pmix_snprintf(qprint, 10, "&#%03d;", (int) bo->bytes[i]);
-                for (j = 0; j < (int) strlen(qprint) && k < PMIX_IOF_BASE_TAGGED_OUT_MAX; j++) {
-                    output->data[k++] = qprint[j];
-                }
-                /* if this was a \n, then we also need to break the line with the end tag */
-                if ('\n' == bo->bytes[i] && (k + endtaglen + 1) < PMIX_IOF_BASE_TAGGED_OUT_MAX) {
-                    /* we need to break the line with the end tag */
-                    for (j = 0; j < endtaglen && k < PMIX_IOF_BASE_TAGGED_OUT_MAX - 1; j++) {
-                        output->data[k++] = endtag[j];
-                    }
-                    if (k == PMIX_IOF_BASE_TAGGED_OUT_MAX) {
-                        /* out of space */
-                        PMIX_ERROR_LOG(PMIX_ERR_OUT_OF_RESOURCE);
-                        goto process;
-                    }
-                    /* move the <cr> over */
-                    output->data[k++] = '\n';
-                    /* if this isn't the end of the data buffer, add a new start tag */
-                    if (i < bo->size - 1 && (k + taglen) < PMIX_IOF_BASE_TAGGED_OUT_MAX) {
-                        for (j = 0; j < taglen && k < PMIX_IOF_BASE_TAGGED_OUT_MAX; j++) {
-                            output->data[k++] = starttag[j];
-                            endtagged = false;
-                        }
-                    } else {
-                        endtagged = true;
-                    }
-                }
-            } else {
-                output->data[k++] = bo->bytes[i];
+                return rc;
             }
         } else {
-            if ('\n' == bo->bytes[i]) {
-                /* we need to break the line with the end tag */
-                for (j = 0; j < endtaglen && k < PMIX_IOF_BASE_TAGGED_OUT_MAX - 1; j++) {
-                    output->data[k++] = endtag[j];
-                }
-                /* move the <cr> over */
-                output->data[k++] = '\n';
-                /* if this isn't the end of the data buffer, add a new start tag */
-                if (i < bo->size - 1) {
-                    for (j = 0; j < taglen && k < PMIX_IOF_BASE_TAGGED_OUT_MAX; j++) {
-                        output->data[k++] = starttag[j];
-                        endtagged = false;
-                    }
-                } else {
-                    endtagged = true;
-                }
-            } else {
-                output->data[k++] = bo->bytes[i];
-            }
+            /* we have some residual that needs to be cached until
+             * the rest of the line is seen */
+            res = PMIX_NEW(pmix_iof_residual_t);
+            PMIX_XFER_PROCID(&res->name, name);
+            res->channel = channel;
+            memcpy(&res->flags, &myflags, sizeof(pmix_iof_flags_t));
+            res->stream = stream;
+            res->copystdout = copystdout;
+            res->copystderr = copystderr;
+            res->bo.bytes = (char*)malloc(inputsize - start);
+            memcpy(res->bo.bytes, &inputdata[start], inputsize - start);
+            res->bo.size = inputsize - start;
+            pmix_list_append(&pmix_server_globals.iof_residuals, &res->super);
         }
     }
-    if (!endtagged && k < PMIX_IOF_BASE_TAGGED_OUT_MAX) {
-        /* need to add an endtag */
-        for (j = 0; j < endtaglen && k < PMIX_IOF_BASE_TAGGED_OUT_MAX - 1; j++) {
-            output->data[k++] = endtag[j];
+    if (copied) {
+        free(inputdata);
+    }
+    return PMIX_SUCCESS;
+}
+
+void pmix_iof_flush_residuals(void)
+{
+    pmix_status_t rc;
+    pmix_iof_residual_t *res;
+
+    PMIX_LIST_FOREACH(res, &pmix_server_globals.iof_residuals, pmix_iof_residual_t) {
+        rc = write_output_line(&res->name, res->channel, &res->flags,
+                               res->stream, res->copystdout, res->copystderr, &res->bo);
+        if (PMIX_SUCCESS != rc) {
+            PMIX_ERROR_LOG(rc);
+            return;
         }
-        output->data[k] = '\n';
     }
-    output->numbytes = k;
-
-process:
-    /* add this data to the write list for this fd */
-    pmix_list_append(&channel->outputs, &output->super);
-
-    /* record how big the buffer is */
-    num_buffered = pmix_list_get_size(&channel->outputs);
-
-    /* is the write event issued? */
-    if (!channel->pending) {
-        /* issue it */
-        PMIX_OUTPUT_VERBOSE((1, pmix_client_globals.iof_output,
-                             "%s write:output adding write event",
-                             PMIX_NAME_PRINT(&pmix_globals.myid)));
-        PMIX_IOF_SINK_ACTIVATE(channel);
-    }
-
-    return num_buffered;
 }
 
 void pmix_iof_static_dump_output(pmix_iof_sink_t *sink)
@@ -1446,15 +1730,19 @@ void pmix_iof_write_handler(int sd, short args, void *cbdata)
 
     PMIX_ACQUIRE_OBJECT(sink);
 
-    PMIX_OUTPUT_VERBOSE((1, pmix_client_globals.iof_output,
+    pmix_output_verbose(1, pmix_client_globals.iof_output,
                          "%s write:handler writing data to %d",
-                         PMIX_NAME_PRINT(&pmix_globals.myid), wev->fd));
+                         PMIX_NAME_PRINT(&pmix_globals.myid), wev->fd);
 
     while (NULL != (item = pmix_list_remove_first(&wev->outputs))) {
         output = (pmix_iof_write_output_t *) item;
         if (0 == output->numbytes) {
             /* don't reactivate the event */
             PMIX_RELEASE(output);
+            if (2 < wev->fd) {  // close the channel
+                close(wev->fd);
+                wev->fd = -1;
+            }
             return;
         }
         num_written = write(wev->fd, output->data, output->numbytes);
@@ -1636,15 +1924,18 @@ void pmix_iof_read_local_handler(int sd, short args, void *cbdata)
             return;
         }
 
-        PMIX_OUTPUT_VERBOSE((1, pmix_client_globals.iof_output,
-                             "%s iof:read handler Error on stdin",
-                             PMIX_NAME_PRINT(&pmix_globals.myid)));
+        pmix_output_verbose(1, pmix_client_globals.iof_output,
+                             "%s iof:read handler Error on %s",
+                             PMIX_NAME_PRINT(&pmix_globals.myid),
+                             PMIx_IOF_channel_string(rev->channel));
         /* Un-recoverable error */
+        bo.bytes = NULL;
+        bo.size = 0;
         numbytes = 0;
+    } else {
+        bo.bytes = (char *) data;
+        bo.size = numbytes;
     }
-
-    bo.bytes = (char *) data;
-    bo.size = numbytes;
 
     /* if this is stdout or stderr of a child, then just output it */
     if (NULL != child &&
@@ -1674,21 +1965,48 @@ void pmix_iof_read_local_handler(int sd, short args, void *cbdata)
         goto reactivate;
     }
 
+    /* if it is stdin that was read, then see if we have a sink
+     * for a child of ours that matches this target - this has precedence over
+     * anything else */
+    if (PMIX_PEER_IS_LAUNCHER(pmix_globals.mypeer)) {
+        if (rev == stdinev_global && NULL != rev->targets) {
+            PMIX_LIST_FOREACH(child, &pmix_pfexec_globals.children, pmix_pfexec_child_t) {
+                if (PMIX_CHECK_PROCID(&child->proc, &rev->targets[0])) {
+                    /* send the input to that target */
+                    rc = write_output_line(&child->proc, &child->stdinsink.wev, NULL,
+                                           PMIX_FWD_STDIN_CHANNEL, false, false, &bo);
+                    goto reactivate;
+                }
+            }
+        }
+    }
+
+    /* if I am a launcher or a tool and connected to a server, then
+     * we want to send things to our server for relay */
+    if ((PMIX_PEER_IS_LAUNCHER(pmix_globals.mypeer) ||
+         PMIX_PEER_IS_TOOL(pmix_globals.mypeer)) &&
+        pmix_globals.connected) {
+        goto forward;
+    }
+
     /* if I am a server, then push this up to my host */
-    if (PMIX_PROC_IS_SERVER(&pmix_globals.mypeer->proc_type)) {
+    if (PMIX_PEER_IS_SERVER(pmix_globals.mypeer)) {
         if (NULL == pmix_host_server.push_stdin) {
             /* nothing we can do with this info - no point in reactivating it */
             return;
         }
         PMIX_BYTE_OBJECT_CREATE(boptr, 1);
-        boptr->bytes = (char*)malloc(bo.size);
-        memcpy(boptr->bytes, bo.bytes, bo.size);
-        boptr->size = bo.size;
+        if (0 < bo.size) {
+            boptr->bytes = (char*)malloc(bo.size);
+            memcpy(boptr->bytes, bo.bytes, bo.size);
+            boptr->size = bo.size;
+        }
         rc = pmix_host_server.push_stdin(&pmix_globals.myid, rev->targets, rev->ntargets,
                                          rev->directives, rev->ndirs, boptr, opcbfn, (void*)boptr);
         goto reactivate;
     }
 
+forward:
     /* pass the data to our PMIx server so it can relay it
      * to the host RM for distribution */
     msg = PMIX_NEW(pmix_buffer_t);
@@ -1772,9 +2090,9 @@ static void iof_sink_construct(pmix_iof_sink_t *ptr)
 static void iof_sink_destruct(pmix_iof_sink_t *ptr)
 {
     if (0 <= ptr->wev.fd) {
-        PMIX_OUTPUT_VERBOSE(
+        pmix_output_verbose
             (20, pmix_client_globals.iof_output, "%s iof: closing sink for process %s on fd %d",
-             PMIX_NAME_PRINT(&pmix_globals.myid), PMIX_NAME_PRINT(&ptr->name), ptr->wev.fd));
+             PMIX_NAME_PRINT(&pmix_globals.myid), PMIX_NAME_PRINT(&ptr->name), ptr->wev.fd);
         PMIX_DESTRUCT(&ptr->wev);
     }
 }
@@ -1782,11 +2100,13 @@ PMIX_CLASS_INSTANCE(pmix_iof_sink_t, pmix_list_item_t, iof_sink_construct, iof_s
 
 static void iof_read_event_construct(pmix_iof_read_event_t *rev)
 {
-    rev->fd = -1;
-    rev->active = false;
-    rev->childproc = NULL;
     rev->tv.tv_sec = 0;
     rev->tv.tv_usec = 0;
+    rev->fd = -1;
+    rev->channel = PMIX_FWD_NO_CHANNELS;
+    rev->active = false;
+    rev->childproc = NULL;
+    rev->always_readable = false;
     rev->targets = NULL;
     rev->ntargets = 0;
     rev->directives = NULL;
@@ -1798,8 +2118,8 @@ static void iof_read_event_destruct(pmix_iof_read_event_t *rev)
         pmix_event_del(&rev->ev);
     }
     if (0 <= rev->fd) {
-        PMIX_OUTPUT_VERBOSE((20, pmix_client_globals.iof_output, "%s iof: closing fd %d",
-                             PMIX_NAME_PRINT(&pmix_globals.myid), rev->fd));
+        pmix_output_verbose(20, pmix_client_globals.iof_output, "%s iof: closing fd %d",
+                             PMIX_NAME_PRINT(&pmix_globals.myid), rev->fd);
         close(rev->fd);
         rev->fd = -1;
     }
@@ -1831,9 +2151,9 @@ static void iof_write_event_destruct(pmix_iof_write_event_t *wev)
     }
     free(wev->ev);
     if (2 < wev->fd) {
-        PMIX_OUTPUT_VERBOSE((20, pmix_client_globals.iof_output,
+        pmix_output_verbose(20, pmix_client_globals.iof_output,
                              "%s iof: closing fd %d for write event",
-                             PMIX_NAME_PRINT(&pmix_globals.myid), wev->fd));
+                             PMIX_NAME_PRINT(&pmix_globals.myid), wev->fd);
         close(wev->fd);
     }
     PMIX_LIST_DESTRUCT(&wev->outputs);
@@ -1841,4 +2161,31 @@ static void iof_write_event_destruct(pmix_iof_write_event_t *wev)
 PMIX_CLASS_INSTANCE(pmix_iof_write_event_t, pmix_list_item_t, iof_write_event_construct,
                     iof_write_event_destruct);
 
-PMIX_CLASS_INSTANCE(pmix_iof_write_output_t, pmix_list_item_t, NULL, NULL);
+static void wocon(pmix_iof_write_output_t *p)
+{
+    p->data = NULL;
+    p->numbytes = 0;
+}
+static void wodes(pmix_iof_write_output_t *p)
+{
+    if (NULL != p->data) {
+        free(p->data);
+    }
+}
+PMIX_CLASS_INSTANCE(pmix_iof_write_output_t,
+                    pmix_list_item_t,
+                    wocon, wodes);
+
+static void iofrescon(pmix_iof_residual_t *p)
+{
+    PMIX_BYTE_OBJECT_CONSTRUCT(&p->bo);
+}
+static void iofresdes(pmix_iof_residual_t *p)
+{
+    if (NULL != p->bo.bytes) {
+        free(p->bo.bytes);
+    }
+}
+PMIX_CLASS_INSTANCE(pmix_iof_residual_t,
+                    pmix_list_item_t,
+                    iofrescon, iofresdes);

@@ -4,7 +4,8 @@
  * Copyright (c) 2016      Mellanox Technologies, Inc.
  *                         All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2022      Triad National Security, LLC. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -14,17 +15,19 @@
 #include "src/include/pmix_config.h"
 
 #include "include/pmix.h"
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 #include "include/pmix_server.h"
 
 #include "src/client/pmix_client_ops.h"
 #include "src/include/pmix_globals.h"
 #include "src/mca/bfrops/bfrops.h"
 #include "src/mca/gds/base/base.h"
-#include "src/threads/threads.h"
+#include "src/threads/pmix_threads.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_hash.h"
 
 #include "src/common/pmix_attributes.h"
-#include "src/include/dictionary.h"
+#include "src/include/pmix_dictionary.h"
 
 static bool initialized = false;
 static pmix_list_t client_attrs;
@@ -53,17 +56,32 @@ static void atrkdes(pmix_attribute_trk_t *p)
     if (NULL != p->function) {
         free(p->function);
     }
-    pmix_argv_free(p->attrs);
+    PMIx_Argv_free(p->attrs);
 }
 static PMIX_CLASS_INSTANCE(pmix_attribute_trk_t, pmix_list_item_t, atrkcon, atrkdes);
 
 PMIX_EXPORT void pmix_init_registered_attrs(void)
 {
+    size_t n;
+    pmix_regattr_input_t *p;
+
     if (!initialized) {
         PMIX_CONSTRUCT(&client_attrs, pmix_list_t);
         PMIX_CONSTRUCT(&server_attrs, pmix_list_t);
         PMIX_CONSTRUCT(&host_attrs, pmix_list_t);
         PMIX_CONSTRUCT(&tool_attrs, pmix_list_t);
+
+        /* cycle across the dictionary and load a hash
+         * table with translations of key -> index */
+        for (n=0; UINT32_MAX != pmix_dictionary[n].index; n++) {
+            p = (pmix_regattr_input_t*)pmix_malloc(sizeof(pmix_regattr_input_t));
+            p->index = pmix_dictionary[n].index;
+            p->name = strdup(pmix_dictionary[n].name);
+            p->string = strdup(pmix_dictionary[n].string);
+            p->type = pmix_dictionary[n].type;
+            p->description = PMIx_Argv_copy(pmix_dictionary[n].description);
+            pmix_hash_register_key(p->index, p);
+        }
         initialized = true;
     }
 }
@@ -99,7 +117,7 @@ static pmix_status_t process_reg(char *level, char *function, char **attrs)
     pmix_list_append(lst, &fnptr->super);
     fnptr->function = strdup(function);
     if (NULL != attrs) {
-        fnptr->attrs = pmix_argv_copy(attrs);
+        fnptr->attrs = PMIx_Argv_copy(attrs);
     }
     return PMIX_SUCCESS;
 }
@@ -126,7 +144,7 @@ PMIX_EXPORT void pmix_release_registered_attrs(void)
         PMIX_LIST_DESTRUCT(&server_attrs);
         PMIX_LIST_DESTRUCT(&host_attrs);
         PMIX_LIST_DESTRUCT(&tool_attrs);
-    }
+   }
     initialized = false;
 }
 
@@ -531,7 +549,7 @@ static void _get_attrs(pmix_list_t *lst, pmix_info_t *info, pmix_list_t *attrs)
 
     /* the value in the info is a comma-delimited list of
      * functions whose attributes are being requested */
-    fns = pmix_argv_split(info->value.data.string, ',');
+    fns = PMIx_Argv_split(info->value.data.string, ',');
 
     /* search the list for these functions */
     PMIX_LIST_FOREACH (tptr, attrs, pmix_attribute_trk_t) {
@@ -551,25 +569,36 @@ static void _get_attrs(pmix_list_t *lst, pmix_info_t *info, pmix_list_t *attrs)
         ip = PMIX_NEW(pmix_infolist_t);
         PMIX_LOAD_KEY(ip->info.key, tptr->function);
         /* create the data array to hold the results */
-        nattr = pmix_argv_count(tptr->attrs);
-        PMIX_DATA_ARRAY_CREATE(darray, nattr, PMIX_REGATTR);
-        ip->info.value.type = PMIX_DATA_ARRAY;
-        ip->info.value.data.darray = darray;
-        regarray = (pmix_regattr_t *) darray->array;
-        for (m = 0; m < nattr; m++) {
-            regarray[m].name = strdup(tptr->attrs[m]);
-            PMIX_LOAD_KEY(regarray[m].string, pmix_attributes_lookup(tptr->attrs[m]));
-            dptr = pmix_attributes_lookup_term(tptr->attrs[m]);
-            if (NULL == dptr) {
-                PMIX_RELEASE(ip);
-                return;
+        nattr = PMIx_Argv_count(tptr->attrs);
+        if (0 == nattr || (1 == nattr &&
+                           (0 == strcmp("N/A", tptr->attrs[0]) ||
+                            0 == strcmp("NONE", tptr->attrs[0])))) {
+            nattr = 1;
+            PMIX_DATA_ARRAY_CREATE(darray, nattr, PMIX_REGATTR);
+            ip->info.value.type = PMIX_DATA_ARRAY;
+            ip->info.value.data.darray = darray;
+            regarray = (pmix_regattr_t *) darray->array;
+            regarray[0].name = strdup("NONE");
+        } else {
+            PMIX_DATA_ARRAY_CREATE(darray, nattr, PMIX_REGATTR);
+            ip->info.value.type = PMIX_DATA_ARRAY;
+            ip->info.value.data.darray = darray;
+            regarray = (pmix_regattr_t *) darray->array;
+            for (m = 0; m < nattr; m++) {
+                regarray[m].name = strdup(tptr->attrs[m]);
+                PMIX_LOAD_KEY(regarray[m].string, pmix_attributes_lookup(tptr->attrs[m]));
+                dptr = pmix_attributes_lookup_term(tptr->attrs[m]);
+                if (NULL == dptr) {
+                    PMIX_RELEASE(ip);
+                    return;
+                }
+                regarray[m].type = dptr->type;
+                regarray[m].description = PMIx_Argv_copy(dptr->description);
             }
-            regarray[m].type = dptr->type;
-            regarray[m].description = pmix_argv_copy(dptr->description);
         }
         pmix_list_append(lst, &ip->super);
     }
-    pmix_argv_free(fns);
+    PMIx_Argv_free(fns);
 }
 
 static void _get_fns(pmix_list_t *lst, pmix_info_t *info, pmix_list_t *attrs)
@@ -580,14 +609,14 @@ static void _get_fns(pmix_list_t *lst, pmix_info_t *info, pmix_list_t *attrs)
 
     /* search the list for these functions */
     PMIX_LIST_FOREACH (tptr, attrs, pmix_attribute_trk_t) {
-        pmix_argv_append_nosize(&fns, tptr->function);
+        PMIx_Argv_append_nosize(&fns, tptr->function);
     }
-    if (0 < pmix_argv_count(fns)) {
+    if (0 < PMIx_Argv_count(fns)) {
         ip = PMIX_NEW(pmix_infolist_t);
-        tmp = pmix_argv_join(fns, ',');
+        tmp = PMIx_Argv_join(fns, ',');
         PMIX_INFO_LOAD(&ip->info, info->key, tmp, PMIX_STRING);
         pmix_list_append(lst, &ip->super);
-        pmix_argv_free(fns);
+        PMIx_Argv_free(fns);
     }
 }
 
@@ -617,7 +646,8 @@ static void query_cbfunc(struct pmix_peer_t *peer, pmix_ptl_hdr_t *hdr,
     int cnt;
     PMIX_HIDE_UNUSED_PARAMS(hdr);
 
-    pmix_output_verbose(2, pmix_globals.debug_output, "pmix:attrs:query cback from server");
+    pmix_output_verbose(2, pmix_globals.debug_output,
+                        "pmix:attrs:query cback from server");
 
     results = PMIX_NEW(pmix_shift_caddy_t);
 
@@ -650,7 +680,8 @@ static void query_cbfunc(struct pmix_peer_t *peer, pmix_ptl_hdr_t *hdr,
     }
 
 complete:
-    pmix_output_verbose(2, pmix_globals.debug_output, "pmix:query cback from server releasing");
+    pmix_output_verbose(2, pmix_globals.debug_output,
+                        "pmix:query cback from server releasing");
     /* release the caller */
     if (NULL != cd->cbfunc) {
         cd->cbfunc(results->status, results->info, results->ninfo, cd->cbdata, relcbfunc, results);
@@ -681,18 +712,18 @@ PMIX_EXPORT void pmix_attrs_query_support(int sd, short args, void *cbdata)
         head = NULL;
         for (m = 0; m < cd->queries[n].nqual; m++) {
             PMIX_CONSTRUCT(&kyresults, pmix_list_t);
-            if (NULL == cd->queries[n].qualifiers
-                || PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_CLIENT_ATTRIBUTES)) {
+            if (NULL == cd->queries[n].qualifiers ||
+                PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_CLIENT_ATTRIBUTES)) {
                 /* everyone has access to the client attrs */
                 _get_attrs(&kyresults, &cd->queries[n].qualifiers[m], &client_attrs);
             }
-            if (NULL == cd->queries[n].qualifiers
-                || PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_CLIENT_FUNCTIONS)) {
+            if (NULL == cd->queries[n].qualifiers ||
+                PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_CLIENT_FUNCTIONS)) {
                 /* everyone has access to the client functions */
                 _get_fns(&kyresults, &cd->queries[n].qualifiers[m], &client_attrs);
             }
-            if (NULL == cd->queries[n].qualifiers
-                || PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_SERVER_ATTRIBUTES)) {
+            if (NULL == cd->queries[n].qualifiers ||
+                PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_SERVER_ATTRIBUTES)) {
                 /* if I am a server, add in my attrs */
                 if (PMIX_PEER_IS_SERVER(pmix_globals.mypeer)) {
                     _get_attrs(&kyresults, &cd->queries[n].qualifiers[m], &server_attrs);
@@ -702,8 +733,8 @@ PMIX_EXPORT void pmix_attrs_query_support(int sd, short args, void *cbdata)
                     goto query;
                 }
             }
-            if (NULL == cd->queries[n].qualifiers
-                || PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_SERVER_FUNCTIONS)) {
+            if (NULL == cd->queries[n].qualifiers ||
+                PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_SERVER_FUNCTIONS)) {
                 /* if I am a server, add in my fns */
                 if (PMIX_PEER_IS_SERVER(pmix_globals.mypeer)) {
                     _get_fns(&kyresults, &cd->queries[n].qualifiers[m], &server_attrs);
@@ -713,20 +744,21 @@ PMIX_EXPORT void pmix_attrs_query_support(int sd, short args, void *cbdata)
                     goto query;
                 }
             }
-            if (NULL == cd->queries[n].qualifiers
-                || PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_TOOL_ATTRIBUTES)) {
+            if (NULL == cd->queries[n].qualifiers ||
+                PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_TOOL_ATTRIBUTES)) {
                 if (PMIX_PEER_IS_TOOL(pmix_globals.mypeer)) {
                     _get_attrs(&kyresults, &cd->queries[n].qualifiers[m], &tool_attrs);
                 }
             }
-            if (NULL == cd->queries[n].qualifiers
-                || PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_TOOL_FUNCTIONS)) {
+            if (NULL == cd->queries[n].qualifiers ||
+                PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_TOOL_FUNCTIONS)) {
                 if (PMIX_PEER_IS_TOOL(pmix_globals.mypeer)) {
                     _get_fns(&kyresults, &cd->queries[n].qualifiers[m], &tool_attrs);
                 }
             }
-            if (NULL == cd->queries[n].qualifiers
-                || PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_HOST_ATTRIBUTES)) {
+            if (NULL == cd->queries[n].qualifiers ||
+                PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_HOST_ATTRIBUTES)) {
+
                 /* if I am a server, add in the host's */
                 if (PMIX_PEER_IS_SERVER(pmix_globals.mypeer)) {
                     _get_attrs(&kyresults, &cd->queries[n].qualifiers[m], &host_attrs);
@@ -736,8 +768,8 @@ PMIX_EXPORT void pmix_attrs_query_support(int sd, short args, void *cbdata)
                     goto query;
                 }
             }
-            if (NULL == cd->queries[n].qualifiers
-                || PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_HOST_FUNCTIONS)) {
+            if (NULL == cd->queries[n].qualifiers ||
+                PMIX_CHECK_KEY(&cd->queries[n].qualifiers[m], PMIX_HOST_FUNCTIONS)) {
                 /* if I am a server, add in the host's */
                 if (PMIX_PEER_IS_SERVER(pmix_globals.mypeer)) {
                     _get_fns(&kyresults, &cd->queries[n].qualifiers[m], &host_attrs);
@@ -782,7 +814,7 @@ PMIX_EXPORT void pmix_attrs_query_support(int sd, short args, void *cbdata)
     goto release;
 
 query:
-    /* if we aren't connected, don't attempt to send */
+   /* if we aren't connected, don't attempt to send */
     if (!pmix_globals.connected) {
         PMIX_RELEASE_THREAD(&pmix_global_lock);
         cd->status = PMIX_ERR_NOT_FOUND;
@@ -811,7 +843,8 @@ query:
         goto release;
     }
 
-    pmix_output_verbose(2, pmix_globals.debug_output, "pmix:query sending to server");
+    pmix_output_verbose(2, pmix_globals.debug_output,
+                        "pmix:query sending to server");
     PMIX_PTL_SEND_RECV(rc, pmix_client_globals.myserver, msg, query_cbfunc, (void *) cd);
     if (PMIX_SUCCESS != rc) {
         cd->status = rc;
@@ -820,8 +853,10 @@ query:
     return;
 
 release:
+    pmix_output_verbose(2, pmix_globals.debug_output,
+                        "pmix:query releasing");
     if (NULL != cd->cbfunc) {
-        cd->cbfunc(cd->status, cd->info, cd->ninfo, cd, _local_relcb, cd);
+        cd->cbfunc(cd->status, cd->info, cd->ninfo, cd->cbdata, _local_relcb, cd);
         return;
     }
 
@@ -829,37 +864,37 @@ release:
 }
 
 /*****   LOCATE A GIVEN ATTRIBUTE    *****/
-PMIX_EXPORT const char *pmix_attributes_lookup(char *attr)
+PMIX_EXPORT const char *pmix_attributes_lookup(const char *attr)
 {
     size_t n;
 
-    for (n = 0; 0 != strlen(dictionary[n].name); n++) {
-        if (0 == strcasecmp(dictionary[n].name, attr)) {
-            return dictionary[n].string;
+    for (n = 0; 0 != strlen(pmix_dictionary[n].name); n++) {
+        if (0 == strcasecmp(pmix_dictionary[n].name, attr)) {
+            return pmix_dictionary[n].string;
         }
     }
-    return NULL;
+    return attr;
 }
 
-PMIX_EXPORT const char *pmix_attributes_reverse_lookup(char *attrstring)
+PMIX_EXPORT const char *pmix_attributes_reverse_lookup(const char *attrstring)
 {
     size_t n;
 
-    for (n = 0; 0 != strlen(dictionary[n].name); n++) {
-        if (0 == strcasecmp(dictionary[n].string, attrstring)) {
-            return dictionary[n].name;
+    for (n = 0; 0 != strlen(pmix_dictionary[n].name); n++) {
+        if (0 == strcasecmp(pmix_dictionary[n].string, attrstring)) {
+            return pmix_dictionary[n].name;
         }
     }
-    return NULL;
+    return attrstring;
 }
 
 PMIX_EXPORT const pmix_regattr_input_t *pmix_attributes_lookup_term(char *attr)
 {
     size_t n;
 
-    for (n = 0; 0 != strlen(dictionary[n].name); n++) {
-        if (0 == strcmp(dictionary[n].name, attr)) {
-            return &dictionary[n];
+    for (n = 0; 0 != strlen(pmix_dictionary[n].name); n++) {
+        if (0 == strcmp(pmix_dictionary[n].name, attr)) {
+            return &pmix_dictionary[n];
         }
     }
     return NULL;
@@ -878,23 +913,23 @@ PMIX_EXPORT char **pmix_attributes_print_functions(char *level)
 
     /* select title */
     if (0 == strcmp(level, PMIX_CLIENT_FUNCTIONS)) {
-        pmix_argv_append_nosize(&ans, title1);
+        PMIx_Argv_append_nosize(&ans, title1);
         lst = &client_attrs;
     } else if (0 == strcmp(level, PMIX_SERVER_FUNCTIONS)) {
-        pmix_argv_append_nosize(&ans, title2);
+        PMIx_Argv_append_nosize(&ans, title2);
         lst = &server_attrs;
     } else if (0 == strcmp(level, PMIX_HOST_FUNCTIONS)) {
-        pmix_argv_append_nosize(&ans, title3);
+        PMIx_Argv_append_nosize(&ans, title3);
         lst = &host_attrs;
     } else if (0 == strcmp(level, PMIX_TOOL_FUNCTIONS)) {
-        pmix_argv_append_nosize(&ans, title4);
+        PMIx_Argv_append_nosize(&ans, title4);
         lst = &tool_attrs;
     } else {
         return NULL;
     }
 
     PMIX_LIST_FOREACH (fnptr, lst, pmix_attribute_trk_t) {
-        pmix_argv_append_nosize(&ans, fnptr->function);
+        PMIx_Argv_append_nosize(&ans, fnptr->function);
     }
     return ans;
 }
@@ -906,7 +941,8 @@ PMIX_EXPORT char **pmix_attributes_print_functions(char *level)
 #define PMIX_PRINT_TYPE_COLUMN_WIDTH   20
 #define PMIX_PRINT_ATTR_COLUMN_WIDTH   141
 
-void pmix_attributes_print_attrs(char ***ans, char *function, pmix_regattr_t *attrs, size_t nattrs)
+void pmix_attributes_print_attrs(char ***ans, char *function,
+                                 pmix_regattr_t *attrs, size_t nattrs)
 {
     char line[PMIX_PRINT_ATTR_COLUMN_WIDTH], *tmp;
     size_t n, m, len;
@@ -920,7 +956,7 @@ void pmix_attributes_print_attrs(char ***ans, char *function, pmix_regattr_t *at
     }
     line[m++] = ':';
     line[m] = '\0';
-    pmix_argv_append_nosize(ans, line);
+    PMIx_Argv_append_nosize(ans, line);
 
     for (n = 0; n < nattrs; n++) {
         memset(line, ' ', PMIX_PRINT_ATTR_COLUMN_WIDTH);
@@ -930,6 +966,12 @@ void pmix_attributes_print_attrs(char ***ans, char *function, pmix_regattr_t *at
             len = PMIX_PRINT_NAME_COLUMN_WIDTH;
         }
         memcpy(line, attrs[n].name, len);
+
+        if (0 == strlen(attrs[n].string)) {
+            line[PMIX_PRINT_ATTR_COLUMN_WIDTH - 1] = '\0'; // ensure NULL termination
+            PMIx_Argv_append_nosize(ans, line);
+            continue;
+        }
 
         len = strlen(attrs[n].string);
         if (PMIX_PRINT_STRING_COLUMN_WIDTH < len) {
@@ -950,7 +992,7 @@ void pmix_attributes_print_attrs(char ***ans, char *function, pmix_regattr_t *at
                          + PMIX_PRINT_TYPE_COLUMN_WIDTH + 6],
                    attrs[n].description[m], len);
             line[PMIX_PRINT_ATTR_COLUMN_WIDTH - 1] = '\0'; // ensure NULL termination
-            pmix_argv_append_nosize(ans, line);
+            PMIx_Argv_append_nosize(ans, line);
             memset(line, ' ', PMIX_PRINT_ATTR_COLUMN_WIDTH);
             line[PMIX_PRINT_ATTR_COLUMN_WIDTH - 1] = '\0';
         }
@@ -968,13 +1010,13 @@ void pmix_attributes_print_headers(char ***ans, char *level)
 
     /* select title */
     if (0 == strcmp(level, PMIX_CLIENT_ATTRIBUTES)) {
-        pmix_argv_append_nosize(ans, title1);
+        PMIx_Argv_append_nosize(ans, title1);
     } else if (0 == strcmp(level, PMIX_SERVER_ATTRIBUTES)) {
-        pmix_argv_append_nosize(ans, title2);
+        PMIx_Argv_append_nosize(ans, title2);
     } else if (0 == strcmp(level, PMIX_HOST_ATTRIBUTES)) {
-        pmix_argv_append_nosize(ans, title3);
+        PMIx_Argv_append_nosize(ans, title3);
     } else if (0 == strcmp(level, PMIX_TOOL_ATTRIBUTES)) {
-        pmix_argv_append_nosize(ans, title4);
+        PMIx_Argv_append_nosize(ans, title4);
     } else {
         return;
     }
@@ -1001,7 +1043,7 @@ void pmix_attributes_print_headers(char ***ans, char *level)
     memcpy(&line[left], "DESCRIPTION", strlen("DESCRIPTION"));
     left += strlen("DESCRIPTION") + 1;
     line[left] = '\0';
-    pmix_argv_append_nosize(ans, line);
+    PMIx_Argv_append_nosize(ans, line);
 
     /* print the dashes under the column headers */
     memset(line, ' ', PMIX_PRINT_ATTR_COLUMN_WIDTH);
@@ -1026,7 +1068,7 @@ void pmix_attributes_print_headers(char ***ans, char *level)
         line[m] = '-';
         ++m;
     }
-    pmix_argv_append_nosize(ans, line);
+    PMIx_Argv_append_nosize(ans, line);
 }
 
 PMIX_EXPORT char **pmix_attributes_print_attr(char *level, char *function)
@@ -1054,40 +1096,52 @@ PMIX_EXPORT char **pmix_attributes_print_attr(char *level, char *function)
 
     /* print the column headers */
     pmix_attributes_print_headers(&ans, level);
-    memset(line, ' ', PMIX_PRINT_ATTR_COLUMN_WIDTH);
-    line[1] = '\0';
+
+    memset(line, '=', PMIX_PRINT_ATTR_COLUMN_WIDTH);
+    line[PMIX_PRINT_ATTR_COLUMN_WIDTH - 1] = '\0';
 
     /* can be comma-delimited list of functions */
-    tmp = pmix_argv_split(function, ',');
+    tmp = PMIx_Argv_split(function, ',');
     for (n = 0; NULL != tmp[n]; n++) {
         PMIX_LIST_FOREACH (fnptr, lst, pmix_attribute_trk_t) {
             if (0 == strcmp(tmp[n], "all") || 0 == strcmp(tmp[n], fnptr->function)) {
                 /* create an array of pmix_regattr_t for this function's attributes */
-                nattr = pmix_argv_count(fnptr->attrs);
-                PMIX_REGATTR_CREATE(rptr, nattr);
-                for (m = 0; m < nattr; m++) {
-                    rptr[m].name = strdup(fnptr->attrs[m]);
-                    PMIX_LOAD_KEY(rptr[m].string, pmix_attributes_lookup(fnptr->attrs[m]));
-                    dptr = pmix_attributes_lookup_term(fnptr->attrs[m]);
-                    if (NULL == dptr) {
-                        pmix_argv_free(tmp);
-                        pmix_argv_free(ans);
-                        PMIX_REGATTR_FREE(rptr, nattr);
-                        return NULL;
+                nattr = PMIx_Argv_count(fnptr->attrs);
+                if (0 == nattr || (1 == nattr &&
+                                   (0 == strcmp("N/A", fnptr->attrs[0]) ||
+                                    0 == strcmp("NONE", fnptr->attrs[0])))) {
+                    nattr = 1;
+                    PMIX_REGATTR_CREATE(rptr, nattr);
+                    rptr[0].name = strdup("NONE");
+                } else {
+                    PMIX_REGATTR_CREATE(rptr, nattr);
+                    for (m = 0; m < nattr; m++) {
+                        rptr[m].name = strdup(fnptr->attrs[m]);
+                        PMIX_LOAD_KEY(rptr[m].string, pmix_attributes_lookup(fnptr->attrs[m]));
+                        dptr = pmix_attributes_lookup_term(fnptr->attrs[m]);
+                        if (NULL == dptr) {
+                            PMIx_Argv_free(tmp);
+                            PMIx_Argv_free(ans);
+                            PMIX_REGATTR_FREE(rptr, nattr);
+                            return NULL;
+                        }
+                        rptr[m].type = dptr->type;
+                        rptr[m].description = PMIx_Argv_copy(dptr->description);
                     }
-                    rptr[m].type = dptr->type;
-                    rptr[m].description = pmix_argv_copy(dptr->description);
                 }
                 pmix_attributes_print_attrs(&ans, fnptr->function, rptr, nattr);
                 PMIX_REGATTR_FREE(rptr, nattr);
-                pmix_argv_append_nosize(&ans, line);
                 if (0 == strcmp(tmp[n], fnptr->function)) {
                     break;
                 }
+                /* add a spacer between functions */
+                PMIx_Argv_append_nosize(&ans, "   ");
+                PMIx_Argv_append_nosize(&ans, line);
+                PMIx_Argv_append_nosize(&ans, "   ");
             }
         }
     }
-    pmix_argv_free(tmp);
+    PMIx_Argv_free(tmp);
 
     return ans;
 }

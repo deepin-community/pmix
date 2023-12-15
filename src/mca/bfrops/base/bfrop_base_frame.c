@@ -14,7 +14,8 @@
  * Copyright (c) 2014-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2015-2020 Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2023      Triad National Security, LLC. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -26,17 +27,18 @@
  */
 #include "src/include/pmix_config.h"
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #ifdef HAVE_STRING_H
 #    include <string.h>
 #endif
 
 #include "src/class/pmix_list.h"
-#include "src/mca/base/base.h"
+#include "src/mca/base/pmix_base.h"
 #include "src/mca/base/pmix_mca_base_framework.h"
 #include "src/mca/base/pmix_mca_base_var.h"
 #include "src/mca/bfrops/base/base.h"
+#include "src/mca/bfrops/base/bfrop_base_tma.h"
 #include "src/mca/mca.h"
 
 /*
@@ -48,37 +50,36 @@
 #include "src/mca/bfrops/base/static-components.h"
 
 /* Instantiate the global vars */
-pmix_bfrops_globals_t pmix_bfrops_globals = {.actives = PMIX_LIST_STATIC_INIT,
-                                             .initialized = false,
-                                             .initial_size = 0,
-                                             .threshold_size = 0,
+pmix_bfrops_globals_t pmix_bfrops_globals = {
+    .actives = PMIX_LIST_STATIC_INIT,
+    .initialized = false,
+    .initial_size = 0,
+    .threshold_size = 0,
 #if PMIX_ENABLE_DEBUG
-                                             .default_type = PMIX_BFROP_BUFFER_FULLY_DESC
+    .default_type = PMIX_BFROP_BUFFER_FULLY_DESC
 #else
-                                             .default_type = PMIX_BFROP_BUFFER_NON_DESC
+    .default_type = PMIX_BFROP_BUFFER_NON_DESC
 #endif
 };
 int pmix_bfrops_base_output = 0;
 
 static int pmix_bfrop_register(pmix_mca_base_register_flag_t flags)
 {
+    PMIX_HIDE_UNUSED_PARAMS(flags);
+
     if (PMIX_MCA_BASE_REGISTER_DEFAULT == flags) {
         /* do something to silence warning */
-        int count = 0;
-        ++count;
     }
     pmix_bfrops_globals.initial_size = PMIX_BFROP_DEFAULT_INITIAL_SIZE;
     pmix_mca_base_var_register("pmix", "bfrops", "base", "initial_size", "Initial size of a buffer",
-                               PMIX_MCA_BASE_VAR_TYPE_SIZE_T, NULL, 0, PMIX_MCA_BASE_VAR_FLAG_NONE,
-                               PMIX_INFO_LVL_2, PMIX_MCA_BASE_VAR_SCOPE_READONLY,
+                               PMIX_MCA_BASE_VAR_TYPE_SIZE_T,
                                &pmix_bfrops_globals.initial_size);
 
     pmix_bfrops_globals.threshold_size = PMIX_BFROP_DEFAULT_THRESHOLD_SIZE;
     pmix_mca_base_var_register("pmix", "bfrops", "base", "threshold_size",
                                "Size at which we switch from extending a buffer by doubling to "
                                "extending by a smaller value",
-                               PMIX_MCA_BASE_VAR_TYPE_SIZE_T, NULL, 0, PMIX_MCA_BASE_VAR_FLAG_NONE,
-                               PMIX_INFO_LVL_2, PMIX_MCA_BASE_VAR_SCOPE_READONLY,
+                               PMIX_MCA_BASE_VAR_TYPE_SIZE_T,
                                &pmix_bfrops_globals.threshold_size);
 
 #if PMIX_ENABLE_DEBUG
@@ -87,8 +88,7 @@ static int pmix_bfrop_register(pmix_mca_base_register_flag_t flags)
     pmix_bfrops_globals.default_type = PMIX_BFROP_BUFFER_NON_DESC;
 #endif
     pmix_mca_base_var_register("pmix", "bfrops", "base", "default_type", "Default type for buffers",
-                               PMIX_MCA_BASE_VAR_TYPE_INT, NULL, 0, PMIX_MCA_BASE_VAR_FLAG_NONE,
-                               PMIX_INFO_LVL_2, PMIX_MCA_BASE_VAR_SCOPE_READONLY,
+                               PMIX_MCA_BASE_VAR_TYPE_INT,
                                &pmix_bfrops_globals.default_type);
     return PMIX_SUCCESS;
 }
@@ -123,7 +123,7 @@ static pmix_status_t pmix_bfrop_open(pmix_mca_base_open_flag_t flags)
 
 PMIX_MCA_BASE_FRAMEWORK_DECLARE(pmix, bfrops, "PMIx Buffer Operations", pmix_bfrop_register,
                                 pmix_bfrop_open, pmix_bfrop_close,
-                                mca_bfrops_base_static_components,
+                                pmix_mca_bfrops_base_static_components,
                                 PMIX_MCA_BASE_FRAMEWORK_FLAG_DEFAULT);
 
 static void moddes(pmix_bfrops_base_active_module_t *p)
@@ -140,7 +140,8 @@ PMIX_CLASS_INSTANCE(pmix_bfrops_base_active_module_t, pmix_list_item_t, NULL, mo
 /** Value **/
 static void pmix_buffer_construct(pmix_buffer_t *buffer)
 {
-    /** set the default buffer type */
+    /** set the buffer type  to UNDEF so the first pack operation
+     * can correctly set it */
     buffer->type = PMIX_BFROP_BUFFER_UNDEF;
 
     /* Make everything NULL to begin with */
@@ -183,11 +184,15 @@ static void kvcon(pmix_kval_t *k)
 }
 static void kvdes(pmix_kval_t *k)
 {
+    pmix_tma_t *const tma = pmix_obj_get_tma(&k->super.super);
+
     if (NULL != k->key) {
-        free(k->key);
+        pmix_tma_free(tma, k->key);
     }
     if (NULL != k->value) {
-        PMIX_VALUE_RELEASE(k->value);
+        pmix_bfrops_base_tma_value_destruct(k->value, tma);
+        pmix_tma_free(tma, k->value);
+        k->value = NULL;
     }
 }
 PMIX_CLASS_INSTANCE(pmix_kval_t, pmix_list_item_t, kvcon, kvdes);

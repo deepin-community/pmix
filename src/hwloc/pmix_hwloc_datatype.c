@@ -5,8 +5,8 @@
  *                         All rights reserved.
  * Copyright (c) 2018      Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
- *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2023      Triad National Security, LLC. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -16,11 +16,14 @@
 
 #include "src/include/pmix_config.h"
 
-#include PMIX_HWLOC_HEADER
+#include <hwloc.h>
+#if HWLOC_API_VERSION >= 0x20000
+#include <hwloc/shmem.h>
+#endif
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 #include "src/mca/bfrops/base/base.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_printf.h"
 #include "pmix_hwloc.h"
 
 pmix_status_t pmix_hwloc_pack_cpuset(pmix_buffer_t *buf, pmix_cpuset_t *src,
@@ -84,7 +87,8 @@ pmix_status_t pmix_hwloc_unpack_cpuset(pmix_buffer_t *buf, pmix_cpuset_t *dest,
 
 pmix_status_t pmix_hwloc_copy_cpuset(pmix_cpuset_t *dest, pmix_cpuset_t *src)
 {
-    if (NULL == src->source || 0 != strncasecmp(src->source, "hwloc", 5)) {
+    if (NULL == src->source ||
+        0 != strncasecmp(src->source, "hwloc", 5)) {
         return PMIX_ERR_NOT_SUPPORTED;
     }
     if (NULL == src->bitmap) {
@@ -119,15 +123,17 @@ char *pmix_hwloc_print_cpuset(pmix_cpuset_t *src)
 
 void pmix_hwloc_destruct_cpuset(pmix_cpuset_t *src)
 {
-    if (NULL == src->source ||
-        0 != strncasecmp(src->source, "hwloc", 5) ||
-        NULL == src->bitmap) {
+    if (NULL == src || NULL == src->source ||
+        0 != strncasecmp(src->source, "hwloc", 5)) {
         return;
     }
 
-    hwloc_bitmap_free(src->bitmap);
-    src->bitmap = NULL;
+    if (NULL != src->bitmap) {
+        hwloc_bitmap_free(src->bitmap);
+        src->bitmap = NULL;
+    }
     free(src->source);
+    src->source = NULL;
 }
 
 // avoid ABI break
@@ -141,7 +147,7 @@ void pmix_hwloc_release_cpuset(pmix_cpuset_t *ptr, size_t sz)
 {
     size_t n;
 
-    if (NULL == ptr->source || 0 != strncasecmp(ptr->source, "hwloc", 5)) {
+    if (NULL == ptr) {
         return;
     }
 
@@ -156,6 +162,18 @@ void pmix_ploc_base_release_cpuset(pmix_cpuset_t *cpuset, size_t n)
 {
     pmix_hwloc_release_cpuset(cpuset, n);
     return;
+}
+
+pmix_status_t pmix_hwloc_get_cpuset_size(pmix_cpuset_t *ptr, size_t *sz)
+{
+    hwloc_bitmap_t test;
+    PMIX_HIDE_UNUSED_PARAMS(ptr);
+
+    test = hwloc_bitmap_alloc();
+    hwloc_bitmap_fill(test);
+    *sz = (size_t)hwloc_bitmap_weight(test);
+    hwloc_bitmap_free(test);
+    return PMIX_SUCCESS;
 }
 
 pmix_status_t pmix_hwloc_pack_topology(pmix_buffer_t *buf, pmix_topology_t *src,
@@ -482,13 +500,18 @@ char *pmix_hwloc_print_topology(pmix_topology_t *src)
 
 void pmix_hwloc_destruct_topology(pmix_topology_t *src)
 {
-    if (NULL == src->source ||
-        0 != strncasecmp(src->source, "hwloc", 5) ||
-        NULL == src->topology) {
+    if (NULL == src || NULL == src->source ||
+        0 != strncasecmp(src->source, "hwloc", 5)) {
         return;
     }
-    hwloc_topology_destroy(src->topology);
+
+    if (NULL != src->topology) {
+        hwloc_topology_destroy(src->topology);
+        src->topology = NULL;
+    }
+
     free(src->source);
+    src->source = NULL;
 }
 
 // avoid ABI break
@@ -502,14 +525,13 @@ void pmix_hwloc_release_topology(pmix_topology_t *src, size_t sz)
 {
     size_t n;
 
-    if (NULL == src->source || 0 != strncasecmp(src->source, "hwloc", 5)) {
+    if (NULL == src) {
         return;
     }
 
     for (n = 0; n < sz; n++) {
         pmix_hwloc_destruct_topology(&src[n]);
     }
-    free(src);
 }
 
 // avoid ABI break
@@ -517,4 +539,22 @@ void pmix_ploc_base_release_topology(pmix_topology_t *topo, size_t n)
 {
     pmix_hwloc_release_topology(topo, n);
     return;
+}
+
+pmix_status_t pmix_hwloc_get_topology_size(pmix_topology_t *ptr, size_t *sz)
+{
+#if HWLOC_API_VERSION < 0x20000
+    PMIX_HIDE_UNUSED_PARAMS(ptr);
+    *sz = 0;
+    return PMIX_ERR_NOT_SUPPORTED;
+#else
+    int err;
+
+    err = hwloc_shmem_topology_get_length(ptr->topology, sz, 0);
+    if (0 != err) {
+        *sz = 0;
+        return PMIX_ERROR;
+    }
+    return PMIX_SUCCESS;
+#endif
 }

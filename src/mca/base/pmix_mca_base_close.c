@@ -10,11 +10,12 @@
  *                         University of Stuttgart.  All rights reserved.
  * Copyright (c) 2004-2005 The Regents of the University of California.
  *                         All rights reserved.
- * Copyright (c) 2009      Cisco Systems, Inc.  All rights reserved.
+ * Copyright (c) 2009-2022 Cisco Systems, Inc.  All rights reserved.
  * Copyright (c) 2015      Los Alamos National Security, LLC. All rights
  *                         reserved.
  * Copyright (c) 2016-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2023      Triad National Security, LLC. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -24,11 +25,11 @@
 
 #include "src/include/pmix_config.h"
 
-#include "include/pmix_common.h"
-#include "src/mca/base/base.h"
+#include "pmix_common.h"
+#include "src/mca/base/pmix_base.h"
 #include "src/mca/base/pmix_mca_base_component_repository.h"
 #include "src/mca/mca.h"
-#include "src/util/output.h"
+#include "src/util/pmix_output.h"
 
 extern int pmix_mca_base_opened;
 
@@ -49,9 +50,15 @@ int pmix_mca_base_close(void)
         /* release the default paths */
         if (NULL != pmix_mca_base_system_default_path) {
             free(pmix_mca_base_system_default_path);
+            pmix_mca_base_system_default_path = NULL;
         }
         if (NULL != pmix_mca_base_user_default_path) {
             free(pmix_mca_base_user_default_path);
+            pmix_mca_base_user_default_path = NULL;
+        }
+        if (NULL != pmix_mca_base_component_path) {
+            free(pmix_mca_base_component_path);
+            pmix_mca_base_component_path = NULL;
         }
 
         /* Close down the component repository */
@@ -59,6 +66,9 @@ int pmix_mca_base_close(void)
 
         /* Shut down the dynamic component finder */
         pmix_mca_base_component_find_finalize();
+
+        /* Shut down the show_load_errors processing */
+        pmix_mca_base_show_load_errors_finalize();
 
         /* Close pmix output stream 0 */
         pmix_output_close(0);

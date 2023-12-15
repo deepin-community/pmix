@@ -13,7 +13,7 @@
  * Copyright (c) 2015-2017 Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2017-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -23,9 +23,9 @@
 
 #include "pmix_config.h"
 
-#include "include/pmix_common.h"
-#include "src/threads/threads.h"
-#include "src/threads/tsd.h"
+#include "pmix_common.h"
+#include "src/threads/pmix_threads.h"
+#include "src/threads/pmix_tsd.h"
 
 bool pmix_debug_threads = false;
 
@@ -106,7 +106,7 @@ int pmix_tsd_key_create(pmix_tsd_key_t *key, pmix_tsd_destructor_t destructor)
     return rc;
 }
 
-int pmix_tsd_keys_destruct()
+int pmix_tsd_keys_destruct(void)
 {
     int i;
     void *ptr;
@@ -125,7 +125,7 @@ int pmix_tsd_keys_destruct()
     return PMIX_SUCCESS;
 }
 
-void pmix_thread_set_main()
+void pmix_thread_set_main(void)
 {
     pmix_main_thread = pthread_self();
 }

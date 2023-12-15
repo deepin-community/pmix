@@ -10,7 +10,7 @@
 #                         University of Stuttgart.  All rights reserved.
 # Copyright (c) 2004-2005 The Regents of the University of California.
 #                         All rights reserved.
-# Copyright (c) 2006-2020 Cisco Systems, Inc.  All rights reserved
+# Copyright (c) 2006-2022 Cisco Systems, Inc.  All rights reserved
 # Copyright (c) 2006-2008 Sun Microsystems, Inc.  All rights reserved.
 # Copyright (c) 2006-2017 Los Alamos National Security, LLC.  All rights
 #                         reserved.
@@ -19,11 +19,13 @@
 # Copyright (c) 2012      Oracle and/or its affiliates.  All rights reserved.
 # Copyright (c) 2013      Mellanox Technologies, Inc.
 #                         All rights reserved.
-# Copyright (c) 2014-2020 Intel, Inc.  All rights reserved.
-# Copyright (c) 2016      IBM Corporation.  All rights reserved.
+# Copyright (c) 2014-2022 Intel, Inc.  All rights reserved.
+# Copyright (c) 2016-2022 IBM Corporation.  All rights reserved.
 # Copyright (c) 2016-2018 Research Organization for Information Science
 #                         and Technology (RIST). All rights reserved.
-# Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+# Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
+# Copyright (c) 2021      Amazon.com, Inc. or its affiliates.
+#                         All Rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -48,7 +50,9 @@ AC_PREREQ([2.69])
 AC_CONFIG_AUX_DIR(./config)
 # Note that this directory must *exactly* match what was specified via
 # -I in ACLOCAL_AMFLAGS in the top-level Makefile.am.
-AC_CONFIG_MACRO_DIR(./config)
+AC_CONFIG_MACRO_DIRS([./config config/oac])
+
+AC_PROG_SED
 
 # autotools expects to perform tests without interference
 # from user-provided CFLAGS, particularly -Werror flags.
@@ -131,30 +135,11 @@ AC_DEFUN([PMIX_CHECK_DIR_FOR_SPACES],[
            AC_MSG_ERROR([Cannot continue.])])
 ])
 
-AC_DEFUN([PMIX_CANONICALIZE_PATH],[
-    case $host_os in
-    darwin*)
-        # MacOS does not have "readlink -f" or realpath (at least as
-        # of MacOS Cataline / 10.15).  Instead, use Python, because we
-        # know MacOS comes with a /usr/bin/python that has
-        # os.path.realpath.
-        $2=`/usr/bin/python -c 'import os; print os.path.realpath("'$1'")'`
-        ;;
-    *)
-        $2=`readlink -f $1`
-        ;;
-    esac
-])
-
 PMIX_VAR_SCOPE_PUSH(pmix_checkdir)
-PMIX_CHECK_DIR_FOR_SPACES([$srcdir], [a], [source tree])
-PMIX_CANONICALIZE_PATH([$srcdir], [pmix_checkdir])
-PMIX_CHECK_DIR_FOR_SPACES([$pmix_checkdir], [an], [absolute source tree])
-PMIX_CANONICALIZE_PATH([.], [pmix_checkdir])
+pmix_checkdir=`pwd`
 PMIX_CHECK_DIR_FOR_SPACES([$pmix_checkdir], [a], [build tree])
 PMIX_CHECK_DIR_FOR_SPACES([$prefix], [a], [prefix])
-PMIX_CANONICALIZE_PATH([$prefix], [pmix_checkdir])
-PMIX_CHECK_DIR_FOR_SPACES([$pmix_checkdir], [an], [absolute prefix])
+PMIX_CHECK_DIR_FOR_SPACES([$srcdir], [a], [source tree])
 PMIX_VAR_SCOPE_POP
 
 ####################################################################
@@ -224,15 +209,31 @@ PMIX_SETUP_WRAPPER_INIT
 # This did not exist pre AM 1.11.x (where x is somewhere >0 and <3),
 # but it is necessary in AM 1.12.x.
 m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
-AC_PROG_LEX(yywrap)
+
+#
+# Is this a developer copy?
+#
+
+if test -e $PMIX_TOP_SRCDIR/.git; then
+    PMIX_DEVEL=1
+else
+    PMIX_DEVEL=0
+fi
+# check for Flex
+AC_PROG_LEX(noyywrap)
+if test "x$LEX" != xflex && test ! -e $PMIX_TOP_SRCDIR/src/util/keyval/keyval_lex.c; then
+    AC_MSG_WARN([*** Could not find Flex on your system.])
+    AC_MSG_WARN([*** Flex is required for developer builds of PMIx.])
+    AC_MSG_WARN([*** Other versions of Lex are not supported.])
+    AC_MSG_WARN([*** NOTE: If you are building from an official tarball])
+    AC_MSG_WARN([*** (not the ones made by GitHub!) downloaded from the])
+    AC_MSG_WARN([*** OpenPMIx web site, you do not need Flex.])
+    AC_MSG_ERROR([Cannot continue])
+fi
 
 ############################################################################
 # Configuration options
 ############################################################################
-
-# Set the MCA prefix
-PMIX_SET_MCA_PREFIX([PMIX_MCA_])
-PMIX_SET_MCA_CMD_LINE_ID([pmca])
 
 # Define PMIx configure arguments
 PMIX_DEFINE_ARGS
@@ -271,12 +272,6 @@ AS_IF([test ! -z "$PMIX_CFLAGS_cache"], [CFLAGS="$CFLAGS $PMIX_CFLAGS_cache"])
 # setup "picky" compiler options if enabled
 PMIX_SETUP_PICKY_COMPILERS
 
-# Cleanup duplicate flags
-PMIX_FLAGS_UNIQ(CFLAGS)
-PMIX_FLAGS_UNIQ(CPPFLAGS)
-PMIX_FLAGS_UNIQ(LDFLAGS)
-PMIX_FLAGS_UNIQ(LIBS)
-
 #
 # Delayed the substitution of CFLAGS and CXXFLAGS until now because
 # they may have been modified throughout the course of this script.
@@ -300,32 +295,6 @@ AC_MSG_CHECKING([final LIBS])
 AC_MSG_RESULT([$LIBS])
 
 ####################################################################
-# Setup variables for pkg-config file (maint/pmix.pc.in)
-####################################################################
-
-#
-# Dependencies that themselves have a pkg-config file available.
-#
-PC_REQUIRES=""
-AS_IF([test $pmix_hwloc_support -eq 1 && test "$pmix_hwloc_source" != "cobuild"],
-      [PC_REQUIRES="$PC_REQUIRES hwloc"])
-AS_IF([test $pmix_libevent_support -eq 1 && test "$pmix_libevent_source" != "cobuild"],
-      [PC_REQUIRES="$PC_REQUIRES libevent"])
-AS_IF([test "$pmix_zlib_support" = "1"],
-      [PC_REQUIRES="$PC_REQUIRES zlib"])
-AC_SUBST([PC_REQUIRES], ["$PC_REQUIRES"])
-
-#
-# Dependencies that don't have a pkg-config file available.
-# In this case we need to manually add -L<path> and -l<lib>
-# to the PC_PRIVATE_LIBS variable.
-#
-PC_PRIVATE_LIBS=""
-AS_IF([test $pmix_libev_support -eq 1],
-      [PC_PRIVATE_LIBS="$PC_PRIVATE_LIBS $pmix_libev_LDFLAGS $pmix_libev_LIBS"])
-AC_SUBST([PC_PRIVATE_LIBS], ["$PC_PRIVATE_LIBS"])
-
-####################################################################
 # -Werror for CI scripts
 ####################################################################
 
@@ -335,6 +304,23 @@ AC_ARG_ENABLE(werror,
 [
     CFLAGS="$CFLAGS -Werror"
 ])
+
+####################################################################
+# no-undefined needed on some platform for shared lib
+####################################################################
+
+AC_MSG_CHECKING([if libtool needs -no-undefined flag to build shared libraries])
+case "`uname`" in
+  CYGWIN*|MINGW*|AIX*)
+    ## Add in the -no-undefined flag to LDFLAGS for libtool.
+    AC_MSG_RESULT([yes])
+    LDFLAGS="$LDFLAGS -no-undefined"
+    ;;
+  *)
+    ## Don't add in anything.
+    AC_MSG_RESULT([no])
+    ;;
+esac
 
 ####################################################################
 # Version information
@@ -349,8 +335,6 @@ AC_SUBST([CONFIGURE_DEPENDENCIES], ['$(top_srcdir)/VERSION'])
 AC_SUBST([libpmix_so_version])
 AC_SUBST([libpmi_so_version])
 AC_SUBST([libpmi2_so_version])
-AC_SUBST([libmca_common_dstore_so_version])
-AC_SUBST([libmca_common_sse_so_version])
 
 AC_CONFIG_FILES(pmix_config_prefix[contrib/Makefile]
                 pmix_config_prefix[examples/Makefile]
@@ -358,6 +342,9 @@ AC_CONFIG_FILES(pmix_config_prefix[contrib/Makefile]
                 pmix_config_prefix[test/test_v2/Makefile]
                 pmix_config_prefix[test/python/Makefile]
                 pmix_config_prefix[test/simple/Makefile]
+                pmix_config_prefix[test/sshot/Makefile]
+                pmix_config_prefix[test/util/Makefile]
+                pmix_config_prefix[docs/Makefile]
                 pmix_config_prefix[maint/pmix.pc])
 
 pmix_show_title "Configuration complete"

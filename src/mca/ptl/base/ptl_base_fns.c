@@ -10,7 +10,7 @@
  * Copyright (c) 2004-2005 The Regents of the University of California.
  *                         All rights reserved.
  * Copyright (c) 2015-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -33,21 +33,18 @@
 #ifdef HAVE_DIRENT_H
 #    include <dirent.h>
 #endif
-#ifdef HAVE_SYS_SYSCTL_H
-#    include <sys/sysctl.h>
-#endif
 #include <ctype.h>
 
 #include "src/include/pmix_globals.h"
 #include "src/include/pmix_socket_errno.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/name_fns.h"
-#include "src/util/net.h"
-#include "src/util/os_path.h"
-#include "src/util/pif.h"
-#include "src/util/printf.h"
-#include "src/util/show_help.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_name_fns.h"
+#include "src/util/pmix_net.h"
+#include "src/util/pmix_os_path.h"
+#include "src/util/pmix_if.h"
+#include "src/util/pmix_printf.h"
+#include "src/util/pmix_show_help.h"
 
 #include "src/mca/ptl/base/base.h"
 #include "src/mca/ptl/base/ptl_base_handshake.h"
@@ -223,8 +220,8 @@ pmix_status_t pmix_ptl_base_setup_fork(const pmix_proc_t *proc, char ***env)
 {
     PMIX_HIDE_UNUSED_PARAMS(proc);
 
-    pmix_setenv("PMIX_SERVER_TMPDIR", pmix_ptl_base.session_tmpdir, true, env);
-    pmix_setenv("PMIX_SYSTEM_TMPDIR", pmix_ptl_base.system_tmpdir, true, env);
+    PMIx_Setenv("PMIX_SERVER_TMPDIR", pmix_ptl_base.session_tmpdir, true, env);
+    PMIx_Setenv("PMIX_SYSTEM_TMPDIR", pmix_ptl_base.system_tmpdir, true, env);
 
     return PMIX_SUCCESS;
 }
@@ -235,10 +232,10 @@ pmix_status_t pmix_ptl_base_parse_uri(const char *evar, char **nspace, pmix_rank
     char **uri;
     char *p;
 
-    uri = pmix_argv_split(evar, ';');
-    if (2 != pmix_argv_count(uri)) {
+    uri = PMIx_Argv_split(evar, ';');
+    if (2 != PMIx_Argv_count(uri)) {
         PMIX_ERROR_LOG(PMIX_ERR_BAD_PARAM);
-        pmix_argv_free(uri);
+        PMIx_Argv_free(uri);
         return PMIX_ERR_NOT_SUPPORTED;
     }
 
@@ -248,7 +245,7 @@ pmix_status_t pmix_ptl_base_parse_uri(const char *evar, char **nspace, pmix_rank
      * stop on any FQDN or IPv4 separations */
     if (NULL == (p = strrchr(uri[0], '.'))) {
         PMIX_ERROR_LOG(PMIX_ERR_BAD_PARAM);
-        pmix_argv_free(uri);
+        PMIx_Argv_free(uri);
         return PMIX_ERR_NOT_SUPPORTED;
     }
     *p = '\0';
@@ -260,7 +257,7 @@ pmix_status_t pmix_ptl_base_parse_uri(const char *evar, char **nspace, pmix_rank
         *suri = strdup(uri[1]);
     }
 
-    pmix_argv_free(uri);
+    PMIx_Argv_free(uri);
     return PMIX_SUCCESS;
 }
 
@@ -519,16 +516,15 @@ pmix_status_t pmix_ptl_base_setup_connection(char *uri, struct sockaddr_storage 
     return PMIX_SUCCESS;
 }
 
-static pmix_status_t send_connect_ack(pmix_peer_t *peer, pmix_info_t iptr[], size_t niptr)
+static pmix_status_t send_connect_ack(pmix_peer_t *peer,
+                                      pmix_info_t iptr[], size_t niptr)
 {
     char *msg;
     size_t sdsize = 0;
     pmix_status_t rc;
 
-    pmix_output_verbose(2, pmix_ptl_base_framework.framework_output, "pmix:ptl SEND CONNECT ACK");
-
-    /* allow space for a marker indicating client vs tool */
-    sdsize = 1;
+    pmix_output_verbose(2, pmix_ptl_base_framework.framework_output,
+                        "pmix:ptl SEND CONNECT ACK");
 
     /* set our ID flag and compute the required handshake size */
     peer->proc_type.flag = pmix_ptl_base_set_flag(&sdsize);
@@ -536,6 +532,7 @@ static pmix_status_t send_connect_ack(pmix_peer_t *peer, pmix_info_t iptr[], siz
     /* construct the contact message */
     rc = pmix_ptl_base_construct_message(peer, &msg, &sdsize, iptr, niptr);
     if (PMIX_SUCCESS != rc) {
+        PMIX_ERROR_LOG(rc);
         return rc;
     }
 
@@ -556,7 +553,7 @@ static pmix_status_t recv_connect_ack(pmix_peer_t *peer)
     pmix_status_t reply;
     pmix_status_t rc;
     struct timeval save;
-    pmix_socklen_t sz;
+    pmix_socklen_t sz = sizeof(save);
     bool sockopt = true;
     uint32_t u32;
 
@@ -583,8 +580,9 @@ static pmix_status_t recv_connect_ack(pmix_peer_t *peer)
     }
     reply = ntohl(u32);
 
-    if (PMIX_PEER_IS_CLIENT(pmix_globals.mypeer) && !PMIX_PEER_IS_TOOL(pmix_globals.mypeer)
-        && !PMIX_PEER_IS_SINGLETON(pmix_globals.mypeer)) {
+    if (PMIX_PEER_IS_CLIENT(pmix_globals.mypeer) &&
+        !PMIX_PEER_IS_TOOL(pmix_globals.mypeer) &&
+        !PMIX_PEER_IS_SINGLETON(pmix_globals.mypeer)) {
         rc = pmix_ptl_base_client_handshake(peer, reply);
     } else { // we are a tool
         rc = pmix_ptl_base_tool_handshake(peer, reply);
@@ -601,8 +599,8 @@ static pmix_status_t recv_connect_ack(pmix_peer_t *peer)
     return PMIX_SUCCESS;
 }
 
-pmix_status_t pmix_ptl_base_make_connection(pmix_peer_t *peer, char *suri, pmix_info_t *iptr,
-                                            size_t niptr)
+pmix_status_t pmix_ptl_base_make_connection(pmix_peer_t *peer, char *suri,
+                                            pmix_info_t *iptr, size_t niptr)
 {
     struct sockaddr_storage myconnection;
     pmix_status_t rc;
@@ -723,6 +721,12 @@ pmix_rnd_flag_t pmix_ptl_base_set_flag(size_t *sz)
                 flag = PMIX_LAUNCHER_NEEDS_ID;
             }
         }
+
+    } else if (PMIX_PEER_IS_SCHEDULER(pmix_globals.mypeer)) {
+        /* add space for our uid/gid for ACL purposes */
+        sdsize += 2 * sizeof(uint32_t);
+        flag = PMIX_SCHEDULER_WITH_ID;
+        sdsize += strlen(pmix_globals.myid.nspace) + 1 + sizeof(uint32_t);
 
     } else if (PMIX_PEER_IS_CLIENT(pmix_globals.mypeer)
                && !PMIX_PEER_IS_TOOL(pmix_globals.mypeer)) {
@@ -881,6 +885,7 @@ pmix_status_t pmix_ptl_base_construct_message(pmix_peer_t *peer, char **msgout, 
 
     case PMIX_TOOL_GIVEN_ID:
     case PMIX_LAUNCHER_GIVEN_ID:
+    case PMIX_SCHEDULER_WITH_ID:
     case PMIX_SINGLETON_CLIENT:
         /* self-started tool/launcher/singleton process that was given an identifier by caller */
         euid = geteuid();
@@ -934,8 +939,8 @@ pmix_status_t pmix_ptl_base_construct_message(pmix_peer_t *peer, char **msgout, 
     return PMIX_SUCCESS;
 }
 
-pmix_status_t pmix_ptl_base_set_timeout(pmix_peer_t *peer, struct timeval *save, pmix_socklen_t *sz,
-                                        bool *sockopt)
+pmix_status_t pmix_ptl_base_set_timeout(pmix_peer_t *peer, struct timeval *save,
+                                        pmix_socklen_t *sz, bool *sockopt)
 {
     struct timeval tv;
 
@@ -1016,8 +1021,8 @@ pmix_status_t pmix_ptl_base_tool_handshake(pmix_peer_t *peer, pmix_status_t rp)
     }
 
     /* if we need an identifier, it comes next */
-    if (PMIX_TOOL_NEEDS_ID == peer->proc_type.flag
-        || PMIX_LAUNCHER_NEEDS_ID == peer->proc_type.flag) {
+    if (PMIX_TOOL_NEEDS_ID == peer->proc_type.flag ||
+        PMIX_LAUNCHER_NEEDS_ID == peer->proc_type.flag) {
         PMIX_PTL_RECV_NSPACE(peer->sd, pmix_globals.myid.nspace);
         PMIX_PTL_RECV_U32(peer->sd, pmix_globals.myid.rank);
     }
@@ -1259,7 +1264,7 @@ complete:
     /* convert the list to an array */
     if (0 < (ndata = pmix_list_get_size(&mylist))) {
         ians = PMIX_NEW(pmix_infolist_t);
-        PMIX_LOAD_KEY(&ians->info.key, PMIX_SERVER_INFO_ARRAY);
+        PMIX_LOAD_KEY(ians->info.key, PMIX_SERVER_INFO_ARRAY);
         ians->info.value.type = PMIX_DATA_ARRAY;
         PMIX_DATA_ARRAY_CREATE(ians->info.value.data.darray, ndata, PMIX_INFO);
         sdata = (pmix_info_t *) ians->info.value.data.darray->array;
@@ -1403,39 +1408,41 @@ static char *pmix_getline(FILE *fp)
  * (a.b.c.d/e), resolve them to an interface name (Currently only
  * supporting IPv4).  If unresolvable, warn and remove.
  */
-char **pmix_ptl_base_split_and_resolve(char **orig_str, char *name)
+char **pmix_ptl_base_split_and_resolve(const char *orig_str,
+                                       const char *name)
 {
-    int i, ret, save, if_index;
-    char **argv, *str, *tmp;
+    int i, ret, if_index;
+    char **argv, **interfaces, *str;
     char if_name[PMIX_IF_NAMESIZE];
     struct sockaddr_storage argv_inaddr, if_inaddr;
     uint32_t argv_prefix;
+    bool found;
 
     /* Sanity check */
-    if (NULL == orig_str || NULL == *orig_str) {
+    if (NULL == orig_str) {
         return NULL;
     }
 
-    argv = pmix_argv_split(*orig_str, ',');
-    if (NULL == argv) {
-        return NULL;
-    }
-    for (save = i = 0; NULL != argv[i]; ++i) {
+    argv = PMIx_Argv_split(orig_str, ',');
+    interfaces = NULL;
+    for (i = 0; NULL != argv[i]; ++i) {
         if (isalpha(argv[i][0])) {
-            argv[save++] = argv[i];
+            /* This is an interface name. If not already in the interfaces array, add it */
+            PMIx_Argv_append_unique_nosize(&interfaces, argv[i]);
+            pmix_output_verbose(20,
+                                pmix_ptl_base_framework.framework_output,
+                                "ptl:tool: Using interface: %s ", argv[i]);
             continue;
         }
 
         /* Found a subnet notation.  Convert it to an IP
            address/netmask.  Get the prefix first. */
         argv_prefix = 0;
-        tmp = strdup(argv[i]);
         str = strchr(argv[i], '/');
         if (NULL == str) {
-            pmix_show_help("help-ptl-base.txt", "invalid if_inexclude", true, name, tmp,
+            pmix_show_help("help-ptl-base.txt", "invalid if_inexclude", true,
+                           name, pmix_globals.hostname, argv[i],
                            "Invalid specification (missing \"/\")");
-            free(argv[i]);
-            free(tmp);
             continue;
         }
         *str = '\0';
@@ -1444,47 +1451,46 @@ char **pmix_ptl_base_split_and_resolve(char **orig_str, char *name)
         /* Now convert the IPv4 address */
         ((struct sockaddr *) &argv_inaddr)->sa_family = AF_INET;
         ret = inet_pton(AF_INET, argv[i], &((struct sockaddr_in *) &argv_inaddr)->sin_addr);
-        free(argv[i]);
+        *str = '/';
 
         if (1 != ret) {
-            pmix_show_help("help-ptl-base.txt", "invalid if_inexclude", true, name, tmp,
+            pmix_show_help("help-ptl-base.txt", "invalid if_inexclude", true,
+                           name, pmix_globals.hostname, argv[i],
                            "Invalid specification (inet_pton() failed)");
-            free(tmp);
             continue;
         }
         pmix_output_verbose(20, pmix_ptl_base_framework.framework_output,
-                            "ptl:tool: Searching for %s address+prefix: %s / %u", name,
+                            "ptl:base: Searching for %s address+prefix: %s / %u", name,
                             pmix_net_get_hostname((struct sockaddr *) &argv_inaddr), argv_prefix);
 
         /* Go through all interfaces and see if we can find a match */
+        found = false;
         for (if_index = pmix_ifbegin(); if_index >= 0; if_index = pmix_ifnext(if_index)) {
-            pmix_ifindextoaddr(if_index, (struct sockaddr *) &if_inaddr, sizeof(if_inaddr));
+            pmix_ifindextoaddr(if_index,
+                               (struct sockaddr*) &if_inaddr,
+                               sizeof(if_inaddr));
             if (pmix_net_samenetwork(&argv_inaddr, &if_inaddr, argv_prefix)) {
-                break;
+                /* We found a match. If it's not already in the interfaces array,
+                   add it. If it's already in the array, treat it as a match */
+                found = true;
+                pmix_ifindextoname(if_index, if_name, sizeof(if_name));
+                PMIx_Argv_append_unique_nosize(&interfaces, if_name);
+                pmix_output_verbose(20,
+                                    pmix_ptl_base_framework.framework_output,
+                                    "ptl:base: Found match: %s (%s)",
+                                    pmix_net_get_hostname((struct sockaddr*) &if_inaddr),
+                                    if_name);
             }
-        }
-        /* If we didn't find a match, keep trying */
-        if (if_index < 0) {
-            pmix_show_help("help-ptl-base.txt", "invalid if_inexclude", true, name, tmp,
-                           "Did not find interface matching this subnet");
-            free(tmp);
-            continue;
-        }
 
-        /* We found a match; get the name and replace it in the
-           argv */
-        pmix_ifindextoname(if_index, if_name, sizeof(if_name));
-        pmix_output_verbose(20, pmix_ptl_base_framework.framework_output,
-                            "ptl:tool: Found match: %s (%s)",
-                            pmix_net_get_hostname((struct sockaddr *) &if_inaddr), if_name);
-        argv[save++] = strdup(if_name);
-        free(tmp);
+        }
+        /* If we didn't find a match, report it but keep trying */
+        if (!found) {
+            pmix_show_help("help-ptl-base.txt", "invalid if_inexclude", true,
+                           name, pmix_globals.hostname, argv[i],
+                           "Did not find interface matching this subnet");
+        }
     }
 
-    /* The list may have been compressed if there were invalid
-       entries, so ensure we end it with a NULL entry */
-    argv[save] = NULL;
-    free(*orig_str);
-    *orig_str = pmix_argv_join(argv, ',');
-    return argv;
+    PMIx_Argv_free(argv);
+    return interfaces;
 }

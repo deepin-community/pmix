@@ -17,11 +17,12 @@ dnl                         reserved.
 dnl Copyright (c) 2015-2019 Research Organization for Information Science
 dnl                         and Technology (RIST).  All rights reserved.
 dnl Copyright (c) 2018-2020 Intel, Inc.  All rights reserved.
-dnl Copyright (c) 2020      Triad National Security, LLC. All rights
+dnl Copyright (c) 2020-2023 Triad National Security, LLC. All rights
 dnl                         reserved.
 dnl Copyright (c) 2021      IBM Corporation.  All rights reserved.
 dnl
 dnl Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+dnl Copyright (c) 2022      Amazon.com, Inc. or its affiliates.  All Rights reserved.
 dnl $COPYRIGHT$
 dnl
 dnl Additional copyrights may follow
@@ -115,7 +116,7 @@ AC_DEFUN([PMIX_PROG_CC_C11],[
             for flag in $(echo $pmix_prog_cc_c11_flags | tr ' ' '\n') ; do
                 PMIX_PROG_CC_C11_HELPER([$flag],[pmix_cv_c11_flag=$flag],[])
                 if test "x$pmix_cv_c11_flag" != "x" ; then
-                    CFLAGS="$CFLAGS $pmix_cv_c11_flag"
+                    PMIX_APPEND_UNIQ([CFLAGS], ["$pmix_cv_c11_flag"])
                     AC_MSG_NOTICE([using $flag to enable C11 support])
                     pmix_cv_c11_supported=yes
                     break
@@ -181,7 +182,7 @@ AC_DEFUN([PMIX_SETUP_CC],[
         # following lines and update the warning when we require a C11 compiler.
         # AC_MSG_WARNING([Open MPI requires a C11 (or newer) compiler])
         # AC_MSG_ERROR([Aborting.])
-        # From Open MPI 1.7 on we require a C99 compiant compiler
+        # From Open MPI 1.7 on we require a C99 compliant compiler
         # with autoconf 2.70 AC_PROG_CC makes AC_PROG_CC_C99 obsolete
         m4_version_prereq([2.70],
             [],
@@ -205,7 +206,7 @@ AC_DEFUN([PMIX_SETUP_CC],[
     PMIX_CC_HELPER([if $CC $1 supports C11 _Thread_local], [pmix_prog_cc_c11_helper__Thread_local_available],
                    [],[[static _Thread_local int  foo = 1;++foo;]])
 
-    dnl At this time, PMIx only needs thread local and the atomic convenience tyes for C11 suport. These
+    dnl At this time, PMIx only needs thread local and the atomic convenience types for C11 support. These
     dnl will likely be required in the future.
     AC_DEFINE_UNQUOTED([PMIX_C_HAVE__THREAD_LOCAL], [$pmix_prog_cc_c11_helper__Thread_local_available],
                        [Whether C compiler supports __Thread_local])
@@ -225,7 +226,7 @@ AC_DEFUN([PMIX_SETUP_CC],[
     AC_DEFINE_UNQUOTED([PMIX_C_HAVE___THREAD], [$pmix_prog_cc__thread_available],
                        [Whether C compiler supports __thread])
 
-    PMIX_C_COMPILER_VENDOR([pmix_c_vendor])
+    OAC_C_COMPILER_VENDOR()
 
     # GNU C and autotools are inconsistent about whether this is
     # defined so let's make it true everywhere for now...  However, IBM
@@ -235,7 +236,7 @@ AC_DEFUN([PMIX_SETUP_CC],[
     # Don't use AC_GNU_SOURCE because it requires that no compiler
     # tests are done before setting it, and we need to at least do
     # enough tests to figure out if we're using XL or not.
-    AS_IF([test "$pmix_cv_c_compiler_vendor" != "ibm"],
+    AS_IF([test "$oac_cv_c_compiler_vendor" != "ibm"],
           [AH_VERBATIM([_GNU_SOURCE],
                        [/* Enable GNU extensions on systems that have them.  */
 #ifndef _GNU_SOURCE
@@ -249,7 +250,7 @@ AC_DEFUN([PMIX_SETUP_CC],[
         # compiling and linking to circumvent trouble with
         # libgcov.
         LDFLAGS_orig="$LDFLAGS"
-        LDFLAGS="$LDFLAGS_orig --coverage"
+        PMIX_APPEND_UNIQ([LDFLAGS], ["$--coverage"])
         PMIX_COVERAGE_FLAGS=
 
         _PMIX_CHECK_SPECIFIC_CFLAGS(--coverage, coverage)
@@ -268,16 +269,13 @@ AC_DEFUN([PMIX_SETUP_CC],[
             CLEANFILES="*.bb *.bbg ${CLEANFILES}"
             PMIX_COVERAGE_FLAGS="-ftest-coverage -fprofile-arcs"
         fi
-        PMIX_FLAGS_UNIQ(CFLAGS)
-        PMIX_FLAGS_UNIQ(LDFLAGS)
         WANT_DEBUG=1
    fi
 
     # Do we want debugging?
     if test "$WANT_DEBUG" = "1" && test "$enable_debug_symbols" != "no" ; then
-        CFLAGS="$CFLAGS -g"
+        PMIX_APPEND_UNIQ([CFLAGS], ["-g"])
 
-        PMIX_FLAGS_UNIQ(CFLAGS)
         AC_MSG_WARN([-g has been added to CFLAGS (--enable-debug)])
     fi
 
@@ -298,7 +296,7 @@ AC_DEFUN([PMIX_SETUP_CC],[
 
     # Try to enable restrict keyword
     RESTRICT_CFLAGS=
-    case "$pmix_c_vendor" in
+    case "$oac_cv_c_compiler_vendor" in
         intel)
             RESTRICT_CFLAGS="-restrict"
         ;;
@@ -310,18 +308,17 @@ AC_DEFUN([PMIX_SETUP_CC],[
         _PMIX_CHECK_SPECIFIC_CFLAGS($RESTRICT_CFLAGS, restrict)
     fi
 
-    PMIX_FLAGS_UNIQ([CFLAGS])
     AC_MSG_RESULT(CFLAGS result: $CFLAGS)
 
     # see if the C compiler supports __builtin_expect
     AC_CACHE_CHECK([if $CC supports __builtin_expect],
         [pmix_cv_cc_supports___builtin_expect],
-        [AC_LINK_IFELSE([AC_LANG_PROGRAM([,
-          [void *ptr = (void*) 0;
+        [AC_LINK_IFELSE([AC_LANG_PROGRAM([[ ]],
+          [[void *ptr = (void*) 0;
            if (__builtin_expect (ptr != (void*) 0, 1)) return 0;
-          ]],
+          ]])],
           [pmix_cv_cc_supports___builtin_expect="yes"],
-          [pmix_cv_cc_supports___builtin_expect="no"])])])
+          [pmix_cv_cc_supports___builtin_expect="no"])])
     if test "$pmix_cv_cc_supports___builtin_expect" = "yes" ; then
         have_cc_builtin_expect=1
     else
@@ -417,7 +414,7 @@ AC_DEFUN([_PMIX_PROG_CC],[
 ])
 
 AC_DEFUN([PMIX_SETUP_PICKY_COMPILERS],[
-    if test $WANT_PICKY_COMPILER -eq 1 && test "$pmix_c_vendor" != "pgi"; then
+    if test $WANT_PICKY_COMPILER -eq 1 && test "$oac_cv_c_compiler_vendor" != "portland group"; then
         _PMIX_CHECK_SPECIFIC_CFLAGS(-Wundef, Wundef)
         _PMIX_CHECK_SPECIFIC_CFLAGS(-Wno-long-long, Wno_long_long, int main() { long long x; })
         _PMIX_CHECK_SPECIFIC_CFLAGS(-Wsign-compare, Wsign_compare)
@@ -432,7 +429,7 @@ AC_DEFUN([PMIX_SETUP_PICKY_COMPILERS],[
         _PMIX_CHECK_SPECIFIC_CFLAGS(-Wall, Wall)
         _PMIX_CHECK_SPECIFIC_CFLAGS(-Wextra, Wextra)
         _PMIX_CHECK_SPECIFIC_CFLAGS(-Werror, Werror)
-        if test $WANT_MEMORY_SANITIZERS -eq 1 && test "$pmix_c_vendor" != "pgi"; then
+        if test $WANT_MEMORY_SANITIZERS -eq 1 && test "$oac_cv_c_compiler_vendor" != "portland group"; then
             _PMIX_CHECK_SPECIFIC_CFLAGS(-fsanitize=address, fsanaddress)
             _PMIX_CHECK_SPECIFIC_CFLAGS(-fsanitize=undefined, fsanundefined)
         fi

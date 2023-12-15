@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021      Triad National Security, LLC.
+ * Copyright (c) 2021-2022 Triad National Security, LLC.
  *                         All rights reserved.
  *
  * Copyright (c) 2021      Nanook Consulting  All rights reserved.
@@ -15,7 +15,7 @@
 #include "pmix.h"
 #include "test_common.h"
 
-int parse_fence_client(int *, int, char **, test_params *, validation_params *);
+static int parse_fence_client(int *, int, char **, test_params *, validation_params *);
 
 static void client_help(char *binary) {
     fprintf(stderr, "Usage: %s [OPTION...]\n", binary);
@@ -32,7 +32,7 @@ static void client_help(char *binary) {
     */
 }
 // client-specific command parser logic
-int parse_fence_client(int *index, int argc, char **argv, test_params *lparams, validation_params *v_params)
+static int parse_fence_client(int *index, int argc, char **argv, test_params *lparams, validation_params *v_params)
 {
     PMIX_HIDE_UNUSED_PARAMS(argc, v_params);
 
@@ -83,7 +83,7 @@ int main(int argc, char *argv[]) {
     pmixt_post_init(&this_proc, &l_params, &v_params);
 
     PMIX_PROC_CONSTRUCT(&job_proc);
-    strncpy(job_proc.nspace, this_proc.nspace, PMIX_MAX_NSLEN);
+    PMIX_LOAD_NSPACE(job_proc.nspace, this_proc.nspace);
     job_proc.rank = PMIX_RANK_WILDCARD;
 
     if (l_params.time_fence) {

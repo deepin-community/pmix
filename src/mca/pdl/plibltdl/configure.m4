@@ -3,7 +3,9 @@
 # Copyright (c) 2009-2015 Cisco Systems, Inc.  All rights reserved.
 #
 # Copyright (c) 2017      Intel, Inc.  All rights reserved.
-# Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+# Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
+# Copyright (c) 2022      Amazon.com, Inc. or its affiliates.
+#                         All Rights reserved.
 # $COPYRIGHT$
 #
 # Additional copyrights may follow
@@ -43,48 +45,23 @@ AC_DEFUN([MCA_pmix_pdl_plibltdl_CONFIG],[
     AC_CONFIG_FILES([src/mca/pdl/plibltdl/Makefile])
 
     # Add --with options
-    AC_ARG_WITH([plibltdl],
+    AC_ARG_WITH([libltdl],
         [AS_HELP_STRING([--with-libltdl(=DIR)],
              [Build libltdl support, optionally adding DIR/include, DIR/lib, and DIR/lib64 to the search path for headers and libraries])])
     AC_ARG_WITH([libltdl-libdir],
        [AS_HELP_STRING([--with-libltdl-libdir=DIR],
              [Search for libltdl libraries in DIR])])
 
-    # Sanity check the --with values
-    PMIX_CHECK_WITHDIR([plibltdl], [$with_libltdl],
-                       [include/ltdl.h])
-    PMIX_CHECK_WITHDIR([plibltdl-libdir], [$with_libltdl_libdir],
-                       [libltdl.*])
-
-    # Defaults
-    pmix_check_plibltdl_dir_msg="compiler default"
-    pmix_check_plibltdl_libdir_msg="linker default"
-
-    # Save directory names if supplied
-    AS_IF([test ! -z "$with_libltdl" && test "$with_libltdl" != "yes"],
-          [pmix_check_plibltdl_dir=$with_libltdl
-           pmix_check_plibltdl_dir_msg="$pmix_check_plibltdl_dir (from --with-libltdl)"])
-    AS_IF([test ! -z "$with_libltdl_libdir" && test "$with_libltdl_libdir" != "yes"],
-          [pmix_check_plibltdl_libdir=$with_libltdl_libdir
-           pmix_check_plibltdl_libdir_msg="$pmix_check_plibltdl_libdir (from --with-libltdl-libdir)"])
-
     pmix_pdl_plibltdl_happy=no
-    AS_IF([test "$with_plibltdl" != "no"],
-          [AC_MSG_CHECKING([for libltdl dir])
-           AC_MSG_RESULT([$pmix_check_plibltdl_dir_msg])
-           AC_MSG_CHECKING([for libltdl library dir])
-           AC_MSG_RESULT([$pmix_check_plibltdl_libdir_msg])
-
-           PMIX_CHECK_PACKAGE([pmix_pdl_plibltdl],
-                  [ltdl.h],
-                  [ltdl],
-                  [lt_dlopen],
-                  [],
-                  [$pmix_check_plibltdl_dir],
-                  [$pmix_check_plibltdl_libdir],
-                  [pmix_pdl_plibltdl_happy=yes],
-                  [pmix_pdl_plibltdl_happy=no])
-              ])
+    AS_IF([test "$with_libltdl" != "no"],
+        [OAC_CHECK_PACKAGE([libltdl],
+                      [pmix_pdl_plibltdl],
+                      [ltdl.h],
+                      [ltdl],
+                      [lt_dlopen],
+                      [pmix_pdl_plibltdl_happy=yes],
+                      [pmix_pdl_plibltdl_happy=no])
+        ])
 
     # If we have plibltdl, do we have lt_dladvise?
     pmix_pdl_plibltdl_have_lt_dladvise=0

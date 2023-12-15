@@ -15,7 +15,7 @@
  * Copyright (c) 2011      Oak Ridge National Labs.  All rights reserved.
  * Copyright (c) 2013-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2015      Mellanox Technologies, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -34,10 +34,10 @@
 
 #include "src/class/pmix_object.h"
 #include "src/include/pmix_globals.h"
-#include "src/util/argv.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_output.h"
 #include "src/util/pmix_environ.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_printf.h"
 
 static pmix_proc_t myproc;
 
@@ -93,10 +93,10 @@ int main(int argc, char **argv)
         PMIX_APP_CREATE(app, 1);
         app->cmd = strdup("./simpclient");
         app->maxprocs = 2;
-        pmix_argv_append_nosize(&app->argv, "simpclient");
-        pmix_argv_append_nosize(&app->argv, "-n");
-        pmix_argv_append_nosize(&app->argv, "2");
-        pmix_setenv("PMIX_ENV_VALUE", "3", true, &app->env);
+        PMIx_Argv_append_nosize(&app->argv, "simpclient");
+        PMIx_Argv_append_nosize(&app->argv, "-n");
+        PMIx_Argv_append_nosize(&app->argv, "2");
+        PMIx_Setenv("PMIX_ENV_VALUE", "3", true, &app->env);
 
         pmix_output(0, "Client ns %s rank %d: calling PMIx_Spawn", myproc.nspace, myproc.rank);
         if (PMIX_SUCCESS != (rc = PMIx_Spawn(NULL, 0, app, 1, nsp2))) {

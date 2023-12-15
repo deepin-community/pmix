@@ -2,7 +2,7 @@
  * Copyright (c) 2016-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2016      Mellanox Technologies Ltd.  All rights reserved.
  * Copyright (c) 2020      Cisco Systems, Inc.  All rights reserved
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -18,16 +18,16 @@
 #endif
 #include <ctype.h>
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
-#include "src/util/argv.h"
-#include "src/util/basename.h"
-#include "src/util/error.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_basename.h"
+#include "src/util/pmix_error.h"
 #include "src/util/pmix_environ.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_printf.h"
 
 #include "src/include/pmix_globals.h"
-#include "src/util/name_fns.h"
+#include "src/util/pmix_name_fns.h"
 #include "src/mca/prm/base/base.h"
 
 #include "prm_slurm.h"
@@ -68,8 +68,8 @@ static int get_remaining_time(uint32_t *timeleft)
     free(cmd);
     pclose(fp);
     /* the output is returned in a colon-delimited set of fields */
-    res = pmix_argv_split(output, ':');
-    cnt =  pmix_argv_count(res);
+    res = PMIx_Argv_split(output, ':');
+    cnt =  PMIx_Argv_count(res);
     tleft = strtol(res[cnt-1], NULL, 10); // has to be at least one field
     /* the next field would be minutes */
     if (1 < cnt) {
@@ -87,7 +87,7 @@ static int get_remaining_time(uint32_t *timeleft)
     if (4 < cnt) {
         tleft = UINT32_MAX;
     }
-    pmix_argv_free(res);
+    PMIx_Argv_free(res);
 
     *timeleft = tleft;
     return PMIX_SUCCESS;

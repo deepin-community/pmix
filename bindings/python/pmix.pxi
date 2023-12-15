@@ -1,3 +1,8 @@
+#file: pmix.pxi
+#
+# Copyright (c) 2022      Nanook Consulting. All rights reserved
+#
+
 from libc.string cimport memset, strncpy, strcpy, strlen, strdup
 from libc.stdlib cimport malloc, realloc, free
 from libc.string cimport memcpy
@@ -58,7 +63,7 @@ class myLock(threading.Event):
 
 ctypedef struct pmix_pyshift_t:
     char *op
-    pmix_byte_object_t *payload
+    pmix_byte_object_t payload
     size_t idx
     pmix_modex_cbfunc_t modex
     pmix_status_t status
@@ -85,16 +90,23 @@ ctypedef struct pmix_pyshift_t:
     pmix_credential_cbfunc_t getcredential
     pmix_validation_cbfunc_t validationcredential
     pmix_info_cbfunc_t allocate
+    pmix_info_cbfunc_t sessioncontrol
     void *notification_cbdata
     void *cbdata
 
 cdef void iofhdlr_cache(capsule, ret):
     cdef pmix_pyshift_t *shifter
+    cdef pmix_byte_object_t *bo
     shifter = <pmix_pyshift_t*>PyCapsule_GetPointer(capsule, "iofhdlr_cache")
+    if NULL == shifter[0].payload.bytes:
+        bo = NULL
+    else:
+        bo = &shifter[0].payload
     pyiofhandler(shifter[0].idx, shifter[0].channel, &shifter[0].source,
-                 shifter[0].payload, shifter[0].info, shifter[0].ndata)
+                 bo, shifter[0].info, shifter[0].ndata)
     if 0 < shifter[0].ndata:
         pmix_free_info(shifter[0].info, shifter[0].ndata)
+    free(shifter[0].payload.bytes)
     return
 
 cdef void event_cache_cb(capsule, ret):
@@ -1203,8 +1215,11 @@ cdef int pmix_load_value(pmix_value_t *value, val:dict):
         pynsptr = <const char *>(pyns)
         value[0].data.envar.value = strdup(pynsptr)
         # TODO: way/function to verify char type
-        pyseparator = <char>ord(val['value']['separator'])
-        value[0].data.envar.separator = pyseparator
+        enval = val['value']['separator']
+        if isinstance(enval, pmix_int_types):
+            value[0].data.envar.separator = enval
+        else:
+            value[0].data.envar.separator = ord(enval)
     elif val['val_type'] == PMIX_REGEX:
         regex = val['value']
         ba = pmix_convert_regex(regex)
@@ -1231,7 +1246,10 @@ cdef dict pmix_unload_value(const pmix_value_t *value):
         return {'value':value[0].data.byte, 'val_type':PMIX_BYTE}
     elif PMIX_STRING == value[0].type:
         pyb = value[0].data.string
-        pystr = pyb.decode("ascii")
+        try:
+            pystr = pyb.decode("ascii")
+        except:
+            pystr = pyb
         return {'value':pystr, 'val_type':PMIX_STRING}
     elif PMIX_SIZE == value[0].type:
         return {'value':value[0].data.size, 'val_type':PMIX_SIZE}
@@ -1392,12 +1410,12 @@ cdef int pmix_unload_info(const pmix_info_t *info, size_t ninfo, ilist:list):
     cdef size_t n
     n = 0
     while n < ninfo:
+        kystr = strdup(info[n].key)
         # pmix_unload_value returns a python dict of val, val_type
         val = pmix_unload_value(&info[n].value)
         if val['val_type'] == PMIX_UNDEF:
             return PMIX_ERR_NOT_SUPPORTED
         d     = {}
-        kystr = strdup(info[n].key)
         pykey = str(kystr.decode("ascii"))
         free(kystr)
         d['key']      = pykey
@@ -1643,14 +1661,12 @@ cdef int pmix_load_apps(pmix_app_t *apps, pyapps:list):
         try:
             if p['env'] is not None:
                 m = len(p['env']) + 1
-            else:
-                m = 1
-            env = <char**> malloc(m * sizeof(char*))
-            if not argv:
-                return PMIX_ERR_NOMEM
-            memset(env, 0, m)
-            if p['env'] is not None:
+                env = <char**> malloc(m * sizeof(char*))
+                if not env:
+                    return PMIX_ERR_NOMEM
+                memset(env, 0, m)
                 pmix_load_argv(env, p['env'])
+                apps[n].env = env
         except:
             pass
 

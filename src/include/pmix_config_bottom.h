@@ -15,7 +15,7 @@
  *                         All rights reserved.
  * Copyright (c) 2013-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -54,7 +54,7 @@
  **********************************************************************/
 
 /* Do we have posix or solaris thread lib */
-#define PMIX_HAVE_THREADS (PMIX_HAVE_POSIX_THREADS || PMIX_HAVE_SOLARIS_THREADS)
+#define PMIX_HAVE_THREADS (PMIX_HAVE_POSIX_THREADS || OAC_HAVE_SOLARIS_THREADS)
 
 /*
  * BEGIN_C_DECLS should be used at the beginning of your declarations,
@@ -187,7 +187,11 @@
 #endif
 
 #if PMIX_HAVE_ATTRIBUTE_FORMAT
-#    define __pmix_attribute_format__(a, b, c) __attribute__((__format__(a, b, c)))
+    #if OAC_HAVE_SOLARIS
+    #    define __pmix_attribute_format__(a, b, c)
+    #else
+    #    define __pmix_attribute_format__(a, b, c) __attribute__((__format__(a, b, c)))
+    #endif
 #else
 #    define __pmix_attribute_format__(a, b, c)
 #endif
@@ -296,7 +300,11 @@
 #endif
 
 #if PMIX_HAVE_ATTRIBUTE_SENTINEL
-#    define __pmix_attribute_sentinel__ __attribute__((__sentinel__))
+    #if OAC_HAVE_SOLARIS
+    #    define __pmix_attribute_sentinel__
+    #else
+    #    define __pmix_attribute_sentinel__ __attribute__((__sentinel__))
+    #endif
 #else
 #    define __pmix_attribute_sentinel__
 #endif
@@ -414,7 +422,7 @@ typedef PMIX_PTRDIFF_TYPE ptrdiff_t;
 
 #    if !defined(HAVE_ASPRINTF) || !defined(HAVE_SNPRINTF) || !defined(HAVE_VASPRINTF) \
         || !defined(HAVE_VSNPRINTF)
-#        include "util/printf.h"
+#        include "util/pmix_printf.h"
 #    endif
 
 #    ifndef HAVE_ASPRINTF
@@ -433,18 +441,6 @@ typedef PMIX_PTRDIFF_TYPE ptrdiff_t;
 #        define vsnprintf pmix_vsnprintf
 #    endif
 
-/*
- * Some platforms (Solaris) have a broken qsort implementation.  Work
- * around by using our own.
- */
-#    if PMIX_HAVE_BROKEN_QSORT
-#        ifdef qsort
-#            undef qsort
-#        endif
-
-#        include "util/qsort.h"
-#        define qsort pmix_qsort
-#    endif
 
 /*
  * Define __func__-preprocessor directive if the compiler does not
@@ -498,7 +494,7 @@ typedef PMIX_PTRDIFF_TYPE ptrdiff_t;
 /* Prior to Mac OS X 10.3, the length modifier "ll" wasn't
    supported, but "q" was for long long.  This isn't ANSI
    C and causes a warning when using PRI?64 macros.  We
-   don't support versions prior to OS X 10.3, so we dont'
+   don't support versions prior to OS X 10.3, so we don't
    need such backward compatibility.  Instead, redefine
    the macros to be "ll", which is ANSI C and doesn't
    cause a compiler warning. */

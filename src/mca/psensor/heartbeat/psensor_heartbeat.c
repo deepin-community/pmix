@@ -4,7 +4,7 @@
  *                         reserved.
  *
  * Copyright (c) 2017-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -13,7 +13,7 @@
  */
 
 #include "src/include/pmix_config.h"
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include <errno.h>
 #ifdef HAVE_UNISTD_H
@@ -24,14 +24,14 @@
 #endif /* HAVE_STRING_H */
 #include <pthread.h>
 #include <stdio.h>
-#include PMIX_EVENT_HEADER
+#include <event.h>
 
 #include "src/include/pmix_globals.h"
 #include "src/mca/ptl/base/base.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/output.h"
-#include "src/util/show_help.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_output.h"
+#include "src/util/pmix_show_help.h"
 
 #include "psensor_heartbeat.h"
 #include "src/mca/psensor/base/base.h"
@@ -149,7 +149,7 @@ static void add_tracker(int sd, short flags, void *cbdata)
     PMIX_HIDE_UNUSED_PARAMS(sd, flags);
 
     /* add the tracker to our list */
-    pmix_list_append(&mca_psensor_heartbeat_component.trackers, &ft->super);
+    pmix_list_append(&pmix_mca_psensor_heartbeat_component.trackers, &ft->super);
 
     /* setup the timer event */
     pmix_event_evtimer_set(pmix_psensor_base.evbase, &ft->ev, check_heartbeat, ft);
@@ -165,10 +165,10 @@ static pmix_status_t heartbeat_start(pmix_peer_t *requestor, pmix_status_t error
     size_t n;
     pmix_ptl_posted_recv_t *rcv;
 
-    PMIX_OUTPUT_VERBOSE((1, pmix_psensor_base_framework.framework_output,
+    pmix_output_verbose(1, pmix_psensor_base_framework.framework_output,
                          "[%s:%d] checking heartbeat monitoring for requestor %s:%d",
                          pmix_globals.myid.nspace, pmix_globals.myid.rank,
-                         requestor->info->pname.nspace, requestor->info->pname.rank));
+                         requestor->info->pname.nspace, requestor->info->pname.rank);
 
     /* if they didn't ask for heartbeats, then nothing for us to do */
     if (0 != strcmp(monitor->key, PMIX_MONITOR_HEARTBEAT)) {
@@ -199,14 +199,14 @@ static pmix_status_t heartbeat_start(pmix_peer_t *requestor, pmix_status_t error
     }
 
     /* if the recv hasn't been posted, so so now */
-    if (!mca_psensor_heartbeat_component.recv_active) {
+    if (!pmix_mca_psensor_heartbeat_component.recv_active) {
         /* setup to receive heartbeats */
         rcv = PMIX_NEW(pmix_ptl_posted_recv_t);
         rcv->tag = PMIX_PTL_TAG_HEARTBEAT;
         rcv->cbfunc = pmix_psensor_heartbeat_recv_beats;
         /* add it to the beginning of the list of recvs */
         pmix_list_prepend(&pmix_ptl_base.posted_recvs, &rcv->super);
-        mca_psensor_heartbeat_component.recv_active = true;
+        pmix_mca_psensor_heartbeat_component.recv_active = true;
     }
 
     /* need to push into our event base to add this to our trackers */
@@ -226,13 +226,13 @@ static void del_tracker(int sd, short flags, void *cbdata)
     PMIX_HIDE_UNUSED_PARAMS(sd, flags);
 
     /* remove the tracker from our list */
-    PMIX_LIST_FOREACH_SAFE (ft, ftnext, &mca_psensor_heartbeat_component.trackers,
+    PMIX_LIST_FOREACH_SAFE (ft, ftnext, &pmix_mca_psensor_heartbeat_component.trackers,
                             pmix_heartbeat_trkr_t) {
         if (ft->requestor != cd->requestor) {
             continue;
         }
         if (NULL == cd->id || (NULL != ft->id && 0 == strcmp(ft->id, cd->id))) {
-            pmix_list_remove_item(&mca_psensor_heartbeat_component.trackers, &ft->super);
+            pmix_list_remove_item(&pmix_mca_psensor_heartbeat_component.trackers, &ft->super);
             PMIX_RELEASE(ft);
         }
     }
@@ -280,17 +280,17 @@ static void check_heartbeat(int fd, short dummy, void *cbdata)
     PMIX_HIDE_UNUSED_PARAMS(fd, dummy);
 
 
-    PMIX_OUTPUT_VERBOSE((1, pmix_psensor_base_framework.framework_output,
+    pmix_output_verbose(1, pmix_psensor_base_framework.framework_output,
                          "[%s:%d] sensor:check_heartbeat for proc %s:%d", pmix_globals.myid.nspace,
                          pmix_globals.myid.rank, ft->requestor->info->pname.nspace,
-                         ft->requestor->info->pname.rank));
+                         ft->requestor->info->pname.rank);
 
     if (0 == ft->nbeats && !ft->stopped) {
         /* no heartbeat recvd in last window */
-        PMIX_OUTPUT_VERBOSE((1, pmix_psensor_base_framework.framework_output,
+        pmix_output_verbose(1, pmix_psensor_base_framework.framework_output,
                              "[%s:%d] sensor:check_heartbeat failed for proc %s:%d",
                              pmix_globals.myid.nspace, pmix_globals.myid.rank,
-                             ft->requestor->info->pname.nspace, ft->requestor->info->pname.rank));
+                             ft->requestor->info->pname.nspace, ft->requestor->info->pname.rank);
         /* generate an event */
         pmix_strncpy(source.nspace, ft->requestor->info->pname.nspace, PMIX_MAX_NSLEN);
         source.rank = ft->requestor->info->pname.rank;
@@ -305,10 +305,10 @@ static void check_heartbeat(int fd, short dummy, void *cbdata)
             PMIX_ERROR_LOG(rc);
         }
     } else {
-        PMIX_OUTPUT_VERBOSE((1, pmix_psensor_base_framework.framework_output,
+        pmix_output_verbose(1, pmix_psensor_base_framework.framework_output,
                              "[%s:%d] sensor:check_heartbeat detected %d beats for proc %s:%d",
                              pmix_globals.myid.nspace, pmix_globals.myid.rank, ft->nbeats,
-                             ft->requestor->info->pname.nspace, ft->requestor->info->pname.rank));
+                             ft->requestor->info->pname.nspace, ft->requestor->info->pname.rank);
     }
     /* reset for next period */
     ft->nbeats = 0;
@@ -326,7 +326,7 @@ static void add_beat(int sd, short args, void *cbdata)
     PMIX_HIDE_UNUSED_PARAMS(sd, args);
 
     /* find this peer in our trackers */
-    PMIX_LIST_FOREACH (ft, &mca_psensor_heartbeat_component.trackers, pmix_heartbeat_trkr_t) {
+    PMIX_LIST_FOREACH (ft, &pmix_mca_psensor_heartbeat_component.trackers, pmix_heartbeat_trkr_t) {
         if (ft->requestor == b->peer) {
             /* increment the beat count */
             ++ft->nbeats;

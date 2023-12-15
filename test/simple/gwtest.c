@@ -17,7 +17,7 @@
  * Copyright (c) 2015      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -29,7 +29,7 @@
 #include "src/include/pmix_config.h"
 #include "include/pmix_server.h"
 #include "src/include/pmix_globals.h"
-#include "src/include/types.h"
+#include "src/include/pmix_types.h"
 
 #include <errno.h>
 #include <signal.h>
@@ -41,10 +41,10 @@
 #include <unistd.h>
 
 #include "src/class/pmix_list.h"
-#include "src/util/argv.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_output.h"
 #include "src/util/pmix_environ.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_printf.h"
 
 static pmix_status_t connected(const pmix_proc_t *proc, void *server_object,
                                pmix_op_cbfunc_t cbfunc, void *cbdata);
@@ -273,6 +273,7 @@ int main(int argc, char **argv)
     mylock_t mylock;
     pmix_data_array_t *darray;
     pmix_info_t *iarray;
+    pmix_nspace_t ncache;
 
     /* smoke test */
     if (PMIX_SUCCESS != 0) {
@@ -367,17 +368,17 @@ int main(int argc, char **argv)
     atmp = NULL;
     for (n = 0; n < nprocs; n++) {
         asprintf(&tmp, "%d", n);
-        pmix_argv_append_nosize(&atmp, tmp);
+        PMIx_Argv_append_nosize(&atmp, tmp);
         free(tmp);
     }
-    tmp = pmix_argv_join(atmp, ',');
-    pmix_argv_free(atmp);
+    tmp = PMIx_Argv_join(atmp, ',');
+    PMIx_Argv_free(atmp);
     x = PMIX_NEW(myxfer_t);
     set_namespace(nprocs, tmp, "foobar", opcbfunc, x);
 
     /* set common argv and env */
-    client_env = pmix_argv_copy(environ);
-    pmix_argv_prepend_nosize(&client_argv, executable);
+    client_env = PMIx_Argv_copy(environ);
+    PMIx_Argv_prepend_nosize(&client_argv, executable);
 
     wakeup = nprocs;
     myuid = getuid();
@@ -411,9 +412,10 @@ int main(int argc, char **argv)
     PMIX_INFO_LOAD(&iarray[3], PMIX_ALLOC_NETWORK_SEC_KEY, NULL, PMIX_BOOL);
     /* now load the array */
     PMIX_INFO_LOAD(&info[0], PMIX_ALLOC_NETWORK, darray, PMIX_DATA_ARRAY);
+    PMIX_LOAD_NSPACE(ncache, "foobar");
 
-    if (PMIX_SUCCESS
-        != (rc = PMIx_server_setup_application("foobar", info, ninfo, sacbfunc, (void *) x))) {
+    rc = PMIx_server_setup_application(ncache, info, ninfo, sacbfunc, (void *) x);
+    if (PMIX_SUCCESS != rc) {
         return rc;
     }
     DEBUG_WAIT_THREAD(&x->lock);
@@ -422,8 +424,8 @@ int main(int argc, char **argv)
 
     /* pass any returned data down */
     DEBUG_CONSTRUCT_LOCK(&x->lock);
-    if (PMIX_SUCCESS
-        != (rc = PMIx_server_setup_local_support("foobar", x->info, x->ninfo, opcbfunc, x))) {
+    rc = PMIx_server_setup_local_support(ncache, x->info, x->ninfo, opcbfunc, x);
+    if (PMIX_SUCCESS != rc) {
         return rc;
     }
     DEBUG_WAIT_THREAD(&x->lock);
@@ -466,8 +468,8 @@ int main(int argc, char **argv)
         }
     }
     free(executable);
-    pmix_argv_free(client_argv);
-    pmix_argv_free(client_env);
+    PMIx_Argv_free(client_argv);
+    PMIx_Argv_free(client_env);
 
     /* hang around until the client(s) finalize */
     while (0 < wakeup) {
@@ -489,7 +491,7 @@ int main(int argc, char **argv)
 
     /* deregister the nspace */
     x = PMIX_NEW(myxfer_t);
-    PMIx_server_deregister_nspace("foobar", opcbfunc, (void *) x);
+    PMIx_server_deregister_nspace(ncache, opcbfunc, (void *) x);
     DEBUG_WAIT_THREAD(&x->lock);
     PMIX_RELEASE(x);
 
@@ -528,6 +530,7 @@ static void set_namespace(int nprocs, char *ranks, char *nspace, pmix_op_cbfunc_
     pmix_info_t *info;
     pmix_rank_t rank;
     uint16_t lr;
+    pmix_nspace_t ns;
 
     gethostname(hostname, sizeof(hostname));
     x->ninfo = 7 + nprocs;
@@ -574,7 +577,8 @@ static void set_namespace(int nprocs, char *ranks, char *nspace, pmix_op_cbfunc_
         x->info[7 + n].value.data.darray = darray;
     }
 
-    PMIx_server_register_nspace(nspace, nprocs, x->info, x->ninfo, cbfunc, x);
+    PMIX_LOAD_NSPACE(ns, nspace);
+    PMIx_server_register_nspace(ns, nprocs, x->info, x->ninfo, cbfunc, x);
 }
 
 static void errhandler(size_t evhdlr_registration_id, pmix_status_t status,
@@ -719,7 +723,7 @@ static pmix_status_t publish_fn(const pmix_proc_t *proc, const pmix_info_t info[
         pmix_strncpy(p->pdata.proc.nspace, proc->nspace, PMIX_MAX_NSLEN);
         p->pdata.proc.rank = proc->rank;
         pmix_strncpy(p->pdata.key, info[n].key, PMIX_MAX_KEYLEN);
-        pmix_value_xfer(&p->pdata.value, (pmix_value_t *) &info[n].value);
+        PMIx_Value_xfer(&p->pdata.value, (pmix_value_t *) &info[n].value);
         pmix_list_append(&pubdata, &p->super);
     }
     if (NULL != cbfunc) {
@@ -749,7 +753,7 @@ static pmix_status_t lookup_fn(const pmix_proc_t *proc, char **keys, const pmix_
                 pmix_strncpy(p2->pdata.proc.nspace, p->pdata.proc.nspace, PMIX_MAX_NSLEN);
                 p2->pdata.proc.rank = p->pdata.proc.rank;
                 pmix_strncpy(p2->pdata.key, p->pdata.key, PMIX_MAX_KEYLEN);
-                pmix_value_xfer(&p2->pdata.value, &p->pdata.value);
+                PMIx_Value_xfer(&p2->pdata.value, &p->pdata.value);
                 pmix_list_append(&results, &p2->super);
                 break;
             }
@@ -764,7 +768,7 @@ static pmix_status_t lookup_fn(const pmix_proc_t *proc, char **keys, const pmix_
                 pmix_strncpy(pd[i].proc.nspace, p->pdata.proc.nspace, PMIX_MAX_NSLEN);
                 pd[i].proc.rank = p->pdata.proc.rank;
                 pmix_strncpy(pd[i].key, p->pdata.key, PMIX_MAX_KEYLEN);
-                pmix_value_xfer(&pd[i].value, &p->pdata.value);
+                PMIx_Value_xfer(&pd[i].value, &p->pdata.value);
             }
         }
     }

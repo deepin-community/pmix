@@ -3,7 +3,7 @@
  *
  * NOTE: THE MUNGE CLIENT LIBRARY (libmunge) IS LICENSED AS LGPL
  *
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -13,12 +13,12 @@
 
 #include "src/include/pmix_config.h"
 
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include "src/include/pmix_globals.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_output.h"
 
 #include <unistd.h>
 #ifdef HAVE_SYS_TYPES_H
@@ -28,7 +28,7 @@
 
 #include "psec_munge.h"
 #include "src/mca/psec/psec.h"
-#include "src/threads/threads.h"
+#include "src/threads/pmix_threads.h"
 
 static pmix_status_t munge_init(void);
 static void munge_finalize(void);
@@ -97,6 +97,7 @@ static pmix_status_t create_cred(struct pmix_peer_t *peer, const pmix_info_t dir
     bool takeus;
     char **types;
     size_t n, m;
+    PMIX_HIDE_UNUSED_PARAMS(peer);
 
     PMIX_ACQUIRE_THREAD(&lock);
 
@@ -111,7 +112,7 @@ static pmix_status_t create_cred(struct pmix_peer_t *peer, const pmix_info_t dir
         for (n = 0; n < ndirs; n++) {
             if (0 == strncmp(directives[n].key, PMIX_CRED_TYPE, PMIX_MAX_KEYLEN)) {
                 /* split the specified string */
-                types = pmix_argv_split(directives[n].value.data.string, ',');
+                types = PMIx_Argv_split(directives[n].value.data.string, ',');
                 takeus = false;
                 for (m = 0; NULL != types[m]; m++) {
                     if (0 == strcmp(types[m], "munge")) {
@@ -120,7 +121,7 @@ static pmix_status_t create_cred(struct pmix_peer_t *peer, const pmix_info_t dir
                         break;
                     }
                 }
-                pmix_argv_free(types);
+                PMIx_Argv_free(types);
                 if (!takeus) {
                     PMIX_RELEASE_THREAD(&lock);
                     return PMIX_ERR_NOT_SUPPORTED;
@@ -187,7 +188,7 @@ static pmix_status_t validate_cred(struct pmix_peer_t *peer, const pmix_info_t d
         for (n = 0; n < ndirs; n++) {
             if (0 == strncmp(directives[n].key, PMIX_CRED_TYPE, PMIX_MAX_KEYLEN)) {
                 /* split the specified string */
-                types = pmix_argv_split(directives[n].value.data.string, ',');
+                types = PMIx_Argv_split(directives[n].value.data.string, ',');
                 takeus = false;
                 for (m = 0; NULL != types[m]; m++) {
                     if (0 == strcmp(types[m], "munge")) {
@@ -196,7 +197,7 @@ static pmix_status_t validate_cred(struct pmix_peer_t *peer, const pmix_info_t d
                         break;
                     }
                 }
-                pmix_argv_free(types);
+                PMIx_Argv_free(types);
                 if (!takeus) {
                     return PMIX_ERR_NOT_SUPPORTED;
                 }

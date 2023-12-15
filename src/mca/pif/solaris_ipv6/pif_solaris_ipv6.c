@@ -4,7 +4,7 @@
  * Copyright (c) 2016      Research Organization for Information Science
  *                         and Technology (RIST). All rights reserved.
  * Copyright (c) 2016-2020 Intel, Inc.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -13,7 +13,7 @@
  */
 
 #include "pmix_config.h"
-#include "include/pmix_common.h"
+#include "pmix_common.h"
 
 #include <string.h>
 #ifdef HAVE_UNISTD_H
@@ -66,33 +66,24 @@
 
 #include "src/mca/pif/base/base.h"
 #include "src/mca/pif/pif.h"
-#include "src/util/output.h"
-#include "src/util/pif.h"
+#include "src/util/pmix_output.h"
+#include "src/util/pmix_if.h"
 
 static int if_solaris_ipv6_open(void);
 
 /* Discovers Solaris IPv6 interfaces */
-pmix_pif_base_component_t mca_pif_solaris_ipv6_component = {
-    /* First, the mca_component_t struct containing meta information
-       about the component itself */
-    .base = {
-        PMIX_PIF_BASE_VERSION_2_0_0,
+pmix_pif_base_component_t pmix_mca_pif_solaris_ipv6_component = {
+    PMIX_PIF_BASE_VERSION_2_0_0,
 
-        /* Component name and version */
-        "solaris_ipv6",
-        PMIX_MAJOR_VERSION,
-        PMIX_MINOR_VERSION,
-        PMIX_RELEASE_VERSION,
+    /* Component name and version */
+    .pmix_mca_component_name = "solaris_ipv6",
+    PMIX_MCA_BASE_MAKE_VERSION(component,
+                               PMIX_MAJOR_VERSION,
+                               PMIX_MINOR_VERSION,
+                               PMIX_RELEASE_VERSION),
 
-        /* Component open and close functions */
-        if_solaris_ipv6_open,
-        NULL
-    },
-    .data = {
-        /* This component is checkpointable */
-        PMIX_MCA_BASE_METADATA_PARAM_CHECKPOINT,
-        .reserved = {0}
-    },
+    /* Component open and close functions */
+    .pmix_mca_open_component = if_solaris_ipv6_open
 };
 
 /* configure using getifaddrs(3) */
@@ -101,7 +92,6 @@ static int if_solaris_ipv6_open(void)
     int i;
     int sd;
     int error;
-    uint16_t kindex;
     struct lifnum lifnum;
     struct lifconf lifconf;
     struct lifreq *lifreq, lifquery;
@@ -142,7 +132,7 @@ static int if_solaris_ipv6_open(void)
         pmix_output(0, "pmix_ifinit: IPv6 SIOCGLIFCONF failed with errno=%d\n", errno);
     }
 
-    for (i = 0; i + sizeof(struct lifreq) <= lifconf.lifc_len; i += sizeof(*lifreq)) {
+    for (i = 0; i + sizeof(struct lifreq) <= (size_t)lifconf.lifc_len; i += sizeof(*lifreq)) {
 
         lifreq = (struct lifreq *) ((caddr_t) lifconf.lifc_buf + i);
         pmix_strncpy(lifquery.lifr_name, lifreq->lifr_name, sizeof(lifquery.lifr_name) - 1);
@@ -153,7 +143,6 @@ static int if_solaris_ipv6_open(void)
             pmix_output(0, "pmix_ifinit: SIOCGLIFINDEX failed with errno=%d\n", errno);
             return PMIX_ERROR;
         }
-        kindex = lifquery.lifr_index;
 
         /* lookup interface flags */
         error = ioctl(sd, SIOCGLIFFLAGS, &lifquery);
@@ -179,7 +168,7 @@ static int if_solaris_ipv6_open(void)
 
                 intf = PMIX_NEW(pmix_pif_t);
                 if (NULL == intf) {
-                    pmix_output(0, "pmix_ifinit: unable to allocate %d bytes\n",
+                    pmix_output(0, "pmix_ifinit: unable to allocate %zu bytes\n",
                                 sizeof(pmix_pif_t));
                     return PMIX_ERR_OUT_OF_RESOURCE;
                 }

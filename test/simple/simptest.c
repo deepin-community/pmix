@@ -17,7 +17,8 @@
  * Copyright (c) 2015-2019 Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2023      Triad National Security, LLC. All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -29,7 +30,7 @@
 #include "src/include/pmix_config.h"
 #include "include/pmix_server.h"
 #include "src/include/pmix_globals.h"
-#include "src/include/types.h"
+#include "src/include/pmix_types.h"
 
 #include <errno.h>
 #include <signal.h>
@@ -42,10 +43,10 @@
 
 #include "src/class/pmix_list.h"
 #include "src/runtime/pmix_progress_threads.h"
-#include "src/util/argv.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_output.h"
 #include "src/util/pmix_environ.h"
-#include "src/util/printf.h"
+#include "src/util/pmix_printf.h"
 
 #include "simptest.h"
 
@@ -99,27 +100,34 @@ static pmix_status_t jctrl_fn(const pmix_proc_t *requestor, const pmix_proc_t ta
 static pmix_status_t mon_fn(const pmix_proc_t *requestor, const pmix_info_t *monitor,
                             pmix_status_t error, const pmix_info_t directives[], size_t ndirs,
                             pmix_info_cbfunc_t cbfunc, void *cbdata);
+static pmix_status_t grp_fn(pmix_group_operation_t op, char *gpid,
+                            const pmix_proc_t procs[], size_t nprocs,
+                            const pmix_info_t directives[], size_t ndirs,
+                            pmix_info_cbfunc_t cbfunc, void *cbdata);
 
-static pmix_server_module_t mymodule = {.client_connected = connected,
-                                        .client_finalized = finalized,
-                                        .abort = abort_fn,
-                                        .fence_nb = fencenb_fn,
-                                        .direct_modex = dmodex_fn,
-                                        .publish = publish_fn,
-                                        .lookup = lookup_fn,
-                                        .unpublish = unpublish_fn,
-                                        .spawn = spawn_fn,
-                                        .connect = connect_fn,
-                                        .disconnect = disconnect_fn,
-                                        .register_events = register_event_fn,
-                                        .deregister_events = deregister_events,
-                                        .notify_event = notify_event,
-                                        .query = query_fn,
-                                        .tool_connected = tool_connect_fn,
-                                        .log = log_fn,
-                                        .allocate = alloc_fn,
-                                        .job_control = jctrl_fn,
-                                        .monitor = mon_fn};
+static pmix_server_module_t mymodule = {
+    .client_connected = connected,
+    .client_finalized = finalized,
+    .abort = abort_fn,
+    .fence_nb = fencenb_fn,
+    .direct_modex = dmodex_fn,
+    .publish = publish_fn,
+    .lookup = lookup_fn,
+    .unpublish = unpublish_fn,
+    .spawn = spawn_fn,
+    .connect = connect_fn,
+    .disconnect = disconnect_fn,
+    .register_events = register_event_fn,
+    .deregister_events = deregister_events,
+    .notify_event = notify_event,
+    .query = query_fn,
+    .tool_connected = tool_connect_fn,
+    .log = log_fn,
+    .allocate = alloc_fn,
+    .job_control = jctrl_fn,
+    .monitor = mon_fn,
+    .group = grp_fn
+};
 
 typedef struct {
     pmix_list_item_t super;
@@ -137,6 +145,7 @@ typedef struct {
     pmix_op_cbfunc_t cbfunc;
     pmix_spawn_cbfunc_t spcbfunc;
     pmix_release_cbfunc_t relcbfunc;
+    pmix_info_cbfunc_t infocbfunc;
     void *cbdata;
 } myxfer_t;
 static void xfcon(myxfer_t *p)
@@ -339,7 +348,7 @@ int main(int argc, char **argv)
                 istimeouttest = true;
             }
             for (k = n + 2; NULL != argv[k]; k++) {
-                pmix_argv_append_nosize(&client_argv, argv[k]);
+                PMIx_Argv_append_nosize(&client_argv, argv[k]);
             }
             n += k;
         } else if (0 == strcmp("-h", argv[n])) {
@@ -445,8 +454,8 @@ int main(int argc, char **argv)
     PMIX_RELEASE(x);
 
     /* set common argv and env */
-    client_env = pmix_argv_copy(environ);
-    pmix_argv_prepend_nosize(&client_argv, executable);
+    client_env = PMIx_Argv_copy(environ);
+    PMIx_Argv_prepend_nosize(&client_argv, executable);
 
     wakeup = nprocs;
     myuid = getuid();
@@ -513,8 +522,8 @@ int main(int argc, char **argv)
             pmix_list_append(&children, &child->super);
         }
     }
-    pmix_argv_free(client_argv);
-    pmix_argv_free(client_env);
+    PMIx_Argv_free(client_argv);
+    PMIx_Argv_free(client_env);
 
     /* hang around until the client(s) finalize */
     while (0 < wakeup) {
@@ -608,16 +617,17 @@ static void set_namespace(int nprocs, char *nspace, pmix_op_cbfunc_t cbfunc, myx
     myxfer_t cd, lock;
     pmix_status_t rc;
     char tmp[50], **agg = NULL;
+    pmix_nspace_t ns;
 
     /* everything on one node */
     PMIx_generate_regex(pmix_globals.hostname, &regex);
     for (m = 0; m < nprocs; m++) {
         snprintf(tmp, 50, "%d", m);
-        pmix_argv_append_nosize(&agg, tmp);
+        PMIx_Argv_append_nosize(&agg, tmp);
         memset(tmp, 0, 50);
     }
-    rks = pmix_argv_join(agg, ',');
-    pmix_argv_free(agg);
+    rks = PMIx_Argv_join(agg, ',');
+    PMIx_Argv_free(agg);
     PMIx_generate_ppn(rks, &ppn);
     free(rks);
     nnodes = 1;
@@ -635,8 +645,10 @@ static void set_namespace(int nprocs, char *nspace, pmix_op_cbfunc_t cbfunc, myx
     }
     iptr = (pmix_info_t *) x->info[n].value.data.darray->array;
     PMIX_INFO_LOAD(&iptr[0], PMIX_NODE_MAP, regex, PMIX_REGEX);
+    free(regex);
     isv1 = &iptr[0];
     PMIX_INFO_LOAD(&iptr[1], PMIX_PROC_MAP, ppn, PMIX_REGEX);
+    free(ppn);
     isv2 = &iptr[1];
     PMIX_INFO_LOAD(&iptr[2], PMIX_JOB_SIZE, &nprocs, PMIX_UINT32);
     PMIX_INFO_LOAD(&iptr[3], PMIX_JOBID, "1234", PMIX_STRING);
@@ -737,7 +749,8 @@ static void set_namespace(int nprocs, char *nspace, pmix_op_cbfunc_t cbfunc, myx
         ++n;
     }
 
-    PMIx_server_register_nspace(nspace, nprocs, x->info, x->ninfo, cbfunc, x);
+    PMIX_LOAD_NSPACE(ns, nspace);
+    PMIx_server_register_nspace(ns, nprocs, x->info, x->ninfo, cbfunc, x);
 }
 
 static void errhandler(size_t evhdlr_registration_id, pmix_status_t status,
@@ -906,7 +919,7 @@ static pmix_status_t publish_fn(const pmix_proc_t *proc, const pmix_info_t info[
         pmix_strncpy(p->pdata.proc.nspace, proc->nspace, PMIX_MAX_NSLEN);
         p->pdata.proc.rank = proc->rank;
         pmix_strncpy(p->pdata.key, info[n].key, PMIX_MAX_KEYLEN);
-        pmix_value_xfer(&p->pdata.value, (pmix_value_t *) &info[n].value);
+        PMIx_Value_xfer(&p->pdata.value, (pmix_value_t *) &info[n].value);
         pmix_list_append(&pubdata, &p->super);
     }
 
@@ -951,7 +964,7 @@ static pmix_status_t lookup_fn(const pmix_proc_t *proc, char **keys, const pmix_
                 pmix_strncpy(p2->pdata.proc.nspace, p->pdata.proc.nspace, PMIX_MAX_NSLEN);
                 p2->pdata.proc.rank = p->pdata.proc.rank;
                 pmix_strncpy(p2->pdata.key, p->pdata.key, PMIX_MAX_KEYLEN);
-                pmix_value_xfer(&p2->pdata.value, &p->pdata.value);
+                PMIx_Value_xfer(&p2->pdata.value, &p->pdata.value);
                 pmix_list_append(&results, &p2->super);
                 break;
             }
@@ -966,7 +979,7 @@ static pmix_status_t lookup_fn(const pmix_proc_t *proc, char **keys, const pmix_
                 pmix_strncpy(pd[i].proc.nspace, p->pdata.proc.nspace, PMIX_MAX_NSLEN);
                 pd[i].proc.rank = p->pdata.proc.rank;
                 pmix_strncpy(pd[i].key, p->pdata.key, PMIX_MAX_KEYLEN);
-                pmix_value_xfer(&pd[i].value, &p->pdata.value);
+                PMIx_Value_xfer(&pd[i].value, &p->pdata.value);
             }
         }
     }
@@ -1094,21 +1107,12 @@ static pmix_status_t notify_event(pmix_status_t code, const pmix_proc_t *source,
     return PMIX_OPERATION_SUCCEEDED;
 }
 
-typedef struct query_data_t {
-    pmix_event_t ev;
-    pmix_info_t *data;
-    size_t ndata;
-    pmix_info_cbfunc_t cbfunc;
-    void *cbdata;
-} query_data_t;
-
 static void qfn(int sd, short args, void *cbdata)
 {
-    query_data_t *qd = (query_data_t *) cbdata;
+    myxfer_t *qd = (myxfer_t *) cbdata;
     PMIX_HIDE_UNUSED_PARAMS(sd, args);
-
-    qd->cbfunc(PMIX_SUCCESS, qd->data, qd->ndata, qd->cbdata, NULL, NULL);
-    PMIX_INFO_FREE(qd->data, qd->ndata);
+    qd->infocbfunc(PMIX_SUCCESS, qd->info, qd->ninfo, qd->cbdata, NULL, NULL);
+    PMIX_RELEASE(qd);
 }
 
 static pmix_status_t query_fn(pmix_proc_t *proct, pmix_query_t *queries, size_t nqueries,
@@ -1116,7 +1120,7 @@ static pmix_status_t query_fn(pmix_proc_t *proct, pmix_query_t *queries, size_t 
 {
     size_t n;
     pmix_info_t *info;
-    query_data_t qd;
+    myxfer_t *qd;
     PMIX_HIDE_UNUSED_PARAMS(proct);
 
     if (NULL == cbfunc) {
@@ -1132,11 +1136,13 @@ static pmix_status_t query_fn(pmix_proc_t *proct, pmix_query_t *queries, size_t 
             return PMIX_ERROR;
         }
     }
-    qd.data = info;
-    qd.ndata = nqueries;
-    qd.cbfunc = cbfunc;
-    qd.cbdata = cbdata;
-    SIMPTEST_THREADSHIFT(&qd, qfn);
+
+    qd = PMIX_NEW(myxfer_t);
+    qd->info = info;
+    qd->ninfo = nqueries;
+    qd->infocbfunc = cbfunc;
+    qd->cbdata = cbdata;
+    SIMPTEST_THREADSHIFT(qd, qfn);
     return PMIX_SUCCESS;
 }
 
@@ -1158,6 +1164,9 @@ static void tool_connect_fn(pmix_info_t *info, size_t ninfo, pmix_tool_connectio
 typedef struct {
     pmix_event_t ev;
     pmix_op_cbfunc_t cbfunc;
+    pmix_info_cbfunc_t infocbfunc;
+    pmix_info_t *info;
+    size_t ninfo;
     void *cbdata;
 } mylog_t;
 
@@ -1172,8 +1181,14 @@ static void log_fn(const pmix_proc_t *client, const pmix_info_t data[], size_t n
                    void *cbdata)
 {
     mylog_t *lg = (mylog_t *) malloc(sizeof(mylog_t));
+    size_t n;
     PMIX_HIDE_UNUSED_PARAMS(client, data, ndata, directives, ndirs);
 
+    for (n=0; n < ndata; n++) {
+        if (PMIX_STRING == data[n].value.type) {
+            fprintf(stderr, "%sLOG: %s\n", PMIX_NAME_PRINT(client), data[n].value.data.string);
+        }
+    }
     lg->cbfunc = cbfunc;
     lg->cbdata = cbdata;
     SIMPTEST_THREADSHIFT(lg, foobar);
@@ -1255,4 +1270,47 @@ static void wait_signal_callback(int sd, short args, void *arg)
         }
     }
     fprintf(stderr, "ENDLOOP\n");
+}
+
+static void relcbfunc(void *cbdata)
+{
+    mylog_t *lg = (mylog_t *) cbdata;
+    free(lg);
+}
+
+static void grpbar(int sd, short args, void *cbdata)
+{
+    mylog_t *lg = (mylog_t *) cbdata;
+    PMIX_HIDE_UNUSED_PARAMS(sd, args);
+    lg->infocbfunc(PMIX_SUCCESS, (pmix_info_t*)lg->info, lg->ninfo, lg->cbdata, relcbfunc, lg);
+}
+
+static pmix_status_t grp_fn(pmix_group_operation_t op, char *gpid,
+                            const pmix_proc_t procs[], size_t nprocs,
+                            const pmix_info_t directives[], size_t ndirs,
+                            pmix_info_cbfunc_t cbfunc, void *cbdata)
+{
+    mylog_t *lg = (mylog_t *) malloc(sizeof(mylog_t));
+    pmix_info_t *info;
+    size_t n;
+    size_t ctxid = 1;
+    PMIX_HIDE_UNUSED_PARAMS(op, gpid, procs, nprocs);
+
+    memset(lg, 0, sizeof(mylog_t));
+    if (PMIX_GROUP_CONSTRUCT == op) {
+        PMIX_INFO_CREATE(info, 2);
+        PMIX_INFO_LOAD(&info[0], PMIX_GROUP_CONTEXT_ID, &ctxid, PMIX_SIZE);
+        for (n=0; n < ndirs; n++) {
+            if (PMIX_CHECK_KEY(&directives[n], PMIX_GROUP_ENDPT_DATA)) {
+                PMIX_INFO_XFER(&info[1], &directives[n]);
+                break;
+            }
+        }
+        lg->info = info;
+        lg->ninfo = 2;
+    }
+    lg->infocbfunc = cbfunc;
+    lg->cbdata = cbdata;
+    SIMPTEST_THREADSHIFT(lg, grpbar);
+    return PMIX_SUCCESS;
 }

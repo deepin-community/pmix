@@ -8,7 +8,8 @@
  * Copyright (c) 2016      Mellanox Technologies, Inc.
  *                         All rights reserved.
  * Copyright (c) 2016      IBM Corporation.  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2022 Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2022      Triad National Security, LLC. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -43,15 +44,14 @@
 #ifdef HAVE_SYS_TYPES_H
 #    include <sys/types.h>
 #endif
-#include PMIX_EVENT_HEADER
+#include <event.h>
 
 #include "src/class/pmix_list.h"
 #include "src/mca/bfrops/bfrops.h"
 #include "src/mca/ptl/ptl.h"
-#include "src/util/argv.h"
-#include "src/util/error.h"
-#include "src/util/hash.h"
-#include "src/util/output.h"
+#include "src/util/pmix_argv.h"
+#include "src/util/pmix_error.h"
+#include "src/util/pmix_output.h"
 
 #include "pmix_client_ops.h"
 
@@ -70,7 +70,8 @@ PMIX_EXPORT pmix_status_t PMIx_Fence(const pmix_proc_t procs[], size_t nprocs,
 
     PMIX_ACQUIRE_THREAD(&pmix_global_lock);
 
-    pmix_output_verbose(2, pmix_client_globals.fence_output, "pmix: executing fence");
+    pmix_output_verbose(2, pmix_client_globals.fence_output,
+                        "pmix: executing fence");
 
     if (pmix_globals.init_cntr <= 0) {
         PMIX_RELEASE_THREAD(&pmix_global_lock);
@@ -107,7 +108,8 @@ PMIX_EXPORT pmix_status_t PMIx_Fence(const pmix_proc_t procs[], size_t nprocs,
     rc = cb->status;
     PMIX_RELEASE(cb);
 
-    pmix_output_verbose(2, pmix_client_globals.fence_output, "pmix: fence released");
+    pmix_output_verbose(2, pmix_client_globals.fence_output,
+                        "pmix: fence released");
 
     return rc;
 }
@@ -125,7 +127,8 @@ PMIX_EXPORT pmix_status_t PMIx_Fence_nb(const pmix_proc_t procs[], size_t nprocs
 
     PMIX_ACQUIRE_THREAD(&pmix_global_lock);
 
-    pmix_output_verbose(2, pmix_client_globals.fence_output, "pmix: fence_nb called");
+    pmix_output_verbose(2, pmix_client_globals.fence_output,
+                        "pmix: fence_nb called");
 
     if (pmix_globals.init_cntr <= 0) {
         PMIX_RELEASE_THREAD(&pmix_global_lock);
@@ -183,7 +186,8 @@ static pmix_status_t unpack_return(pmix_buffer_t *data)
     pmix_status_t ret;
     int32_t cnt;
 
-    pmix_output_verbose(2, pmix_client_globals.fence_output, "client:unpack fence called");
+    pmix_output_verbose(2, pmix_client_globals.fence_output,
+                        "client:unpack fence called");
 
     /* unpack the status code */
     cnt = 1;
@@ -194,6 +198,15 @@ static pmix_status_t unpack_return(pmix_buffer_t *data)
     }
     pmix_output_verbose(2, pmix_client_globals.fence_output,
                         "client:unpack fence received status %d", ret);
+    
+    /* provide an opportunity to store any data (or at least how to access
+     * any data) that was included in the fence */
+    PMIX_GDS_RECV_MODEX_COMPLETE(rc, pmix_client_globals.myserver, data);
+    if (PMIX_SUCCESS != rc) {
+        PMIX_ERROR_LOG(rc);
+        return rc;
+    }
+
     return ret;
 }
 
@@ -244,9 +257,10 @@ static void wait_cbfunc(struct pmix_peer_t *pr, pmix_ptl_hdr_t *hdr, pmix_buffer
 {
     pmix_cb_t *cb = (pmix_cb_t *) cbdata;
     pmix_status_t rc;
-
-    pmix_output_verbose(2, pmix_client_globals.fence_output, "pmix: fence_nb callback recvd");
     PMIX_HIDE_UNUSED_PARAMS(pr, hdr);
+
+    pmix_output_verbose(2, pmix_client_globals.fence_output,
+                        "pmix: fence_nb callback recvd");
 
     if (NULL == cb) {
         PMIX_ERROR_LOG(PMIX_ERR_BAD_PARAM);

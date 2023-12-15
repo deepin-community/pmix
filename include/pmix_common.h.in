@@ -3,9 +3,12 @@
  * Copyright (c) 2013-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2016-2019 Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
- * Copyright (c) 2016      IBM Corporation.  All rights reserved.
+ * Copyright (c) 2016-2022 IBM Corporation.  All rights reserved.
  * Copyright (c) 2016-2019 Mellanox Technologies, Inc.
  *                         All rights reserved.
+ * Copyright (c) 2021      Triad National Security, LLC. All rights
+ *                         reserved.
+ *
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -43,7 +46,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  * Copyright (c) 2020      Cisco Systems, Inc.  All rights reserved
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting  All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -57,8 +60,10 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <ctype.h>
 #include <sys/time.h> /* for struct timeval */
 #include <unistd.h> /* for uid_t and gid_t */
 #include <sys/types.h> /* for uid_t and gid_t */
@@ -150,6 +155,9 @@ typedef uint32_t pmix_rank_t;
 /* initialization attributes */
 #define PMIX_EXTERNAL_PROGRESS              "pmix.evext"            // (bool) The host shall progress the PMIx library via
                                                                     //        calls to PMIx_Progress
+#define PMIX_EXTERNAL_AUX_EVENT_BASE        "pmix.evaux"            // (void*) event base to be used for auxiliary
+                                                                    //        functions (e.g., capturing signals) that would
+                                                                    //        otherwise interfere with the host
 #define PMIX_SERVER_TOOL_SUPPORT            "pmix.srvr.tool"        // (bool) The host RM wants to declare itself as willing
                                                                     //        to accept tool connection requests
 #define PMIX_SERVER_REMOTE_CONNECTIONS      "pmix.srvr.remote"      // (bool) Allow connections from remote tools (do not use
@@ -173,7 +181,9 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_SERVER_GATEWAY                 "pmix.srv.gway"         // (bool) Server is acting as a gateway for PMIx requests
                                                                     //        that cannot be serviced on backend nodes
                                                                     //        (e.g., logging to email)
-#define PMIX_SERVER_SCHEDULER               "pmix.srv.sched"        // (bool) Server supports system scheduler
+#define PMIX_SERVER_SYS_CONTROLLER          "pmix.srv.ctrlr"        // (bool) Server is hosted by the system controller for
+                                                                    //        the cluster
+#define PMIX_SERVER_SCHEDULER               "pmix.srv.sched"        // (bool) Server is hosted by the system scheduler
 #define PMIX_SERVER_START_TIME              "pmix.srv.strtime"      // (char*) Time when the server started - i.e., when the server created
                                                                     //         it's rendezvous file (given in ctime string format)
 #define PMIX_HOMOGENEOUS_SYSTEM             "pmix.homo"             // (bool) The nodes comprising the session are homogeneous - i.e., they
@@ -181,6 +191,10 @@ typedef uint32_t pmix_rank_t;
                                                                     //        GPU, and other devices
 #define PMIX_SINGLETON                      "pmix.singleton"        // (char*) String representation (nspace.rank) of proc ID for the singleton
                                                                     //         the server was started to support
+#define PMIX_BIND_PROGRESS_THREAD           "pmix.bind.pt"          // (char*) Comma-delimited ranges of CPUs that the internal PMIx progress
+                                                                    //         thread shall be bound to
+#define PMIX_BIND_REQUIRED                  "pmix.bind.reqd"        // (bool) Return error if the internal PMIx progress thread cannot be bound
+
 
 /* tool-related attributes */
 #define PMIX_TOOL_NSPACE                    "pmix.tool.nspace"      // (char*) Name of the nspace to use for this tool
@@ -189,7 +203,10 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_CONNECT_TO_SYSTEM              "pmix.cnct.sys"         // (bool) The requestor requires that a connection be made only to
                                                                     //        a local system-level PMIx server
 #define PMIX_CONNECT_SYSTEM_FIRST           "pmix.cnct.sys.first"   // (bool) Preferentially look for a system-level PMIx server first
+#define PMIX_CONNECT_TO_SCHEDULER           "pmix.cnct.sched"       // (bool) Connect to the system scheduler
+#define PMIX_CONNECT_TO_SYS_CONTROLLER      "pmix.cnct.ctrlr"       // (bool) Connect to the system controller
 #define PMIX_SERVER_URI                     "pmix.srvr.uri"         // (char*) URI of server to be contacted
+#define PMIX_MYSERVER_URI                   "pmix.mysrvr.uri"       // (char*) URI of this proc's listener socket
 #define PMIX_SERVER_HOSTNAME                "pmix.srvr.host"        // (char*) node where target server is located
 #define PMIX_CONNECT_MAX_RETRIES            "pmix.tool.mretries"    // (uint32_t) maximum number of times to try to connect to server
 #define PMIX_CONNECT_RETRY_DELAY            "pmix.tool.retry"       // (uint32_t) time in seconds between connection attempts
@@ -253,12 +270,6 @@ typedef uint32_t pmix_rank_t;
                                                                     //           "close" (thread located on cpu close to master thread)
                                                                     //           "spread" (threads load-balanced across available cpus)
 
-/* attributes for the USOCK rendezvous socket  */
-#define PMIX_USOCK_DISABLE                  "pmix.usock.disable"    // (bool) disable legacy usock support
-#define PMIX_SOCKET_MODE                    "pmix.sockmode"         // (uint32_t) POSIX mode_t (9 bits valid)
-#define PMIX_SINGLE_LISTENER                "pmix.sing.listnr"      // (bool) use only one rendezvous socket, letting priorities and/or
-                                                                    //        MCA param select the active transport
-
 /* attributes for TCP connections */
 #define PMIX_TCP_REPORT_URI                 "pmix.tcp.repuri"       // (char*) output URI - '-' => stdout, '+' => stderr, or filename
 #define PMIX_TCP_URI                        "pmix.tcp.uri"          // (char*) URI of server to connect to, or file:<name of file containing it>
@@ -278,12 +289,12 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_NODE_OVERSUBSCRIBED            "pmix.ndosub"           // (bool) true if number of procs from this job on this node
                                                                     //        exceeds the number of slots allocated to it
 
-
 /* scratch directory locations for use by applications */
 #define PMIX_TMPDIR                         "pmix.tmpdir"           // (char*) top-level tmp dir assigned to session
 #define PMIX_NSDIR                          "pmix.nsdir"            // (char*) sub-tmpdir assigned to namespace
 #define PMIX_PROCDIR                        "pmix.pdir"             // (char*) sub-nsdir assigned to proc
 #define PMIX_TDIR_RMCLEAN                   "pmix.tdir.rmclean"     // (bool)  Resource Manager will clean session directories
+
 
 /* information about relative ranks as assigned by the RM */
 #define PMIX_CLUSTER_ID                     "pmix.clid"             // (char*) a string name for the cluster this proc is executing on
@@ -302,7 +313,6 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_APPLDR                         "pmix.aldr"             // (pmix_rank_t) lowest rank in this app within this job
 #define PMIX_PROC_PID                       "pmix.ppid"             // (pid_t) pid of specified proc
 #define PMIX_SESSION_ID                     "pmix.session.id"       // (uint32_t) session identifier
-
 #define PMIX_NODE_LIST                      "pmix.nlist"            // (char*) comma-delimited list of nodes running procs for the specified nspace
 #define PMIX_ALLOCATED_NODELIST             "pmix.alist"            // (char*) comma-delimited list of all nodes in this allocation regardless of
                                                                     //         whether or not they currently host procs.
@@ -339,6 +349,7 @@ typedef uint32_t pmix_rank_t;
 /* topology info */
 #define PMIX_TOPOLOGY2                      "pmix.topo2"            // (pmix_topology_t*) pointer to a PMIx topology object
 #define PMIX_LOCALITY_STRING                "pmix.locstr"           // (char*) string describing a proc's location
+#define PMIX_TOPOLOGY_INDEX                 "pmix.topo.index"       // (int)  index of a topology in a storage array
 
 
 /* request-related info */
@@ -383,6 +394,10 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_ACCESS_GRPIDS                  "pmix.agids"            // (pmix_data_array_t*) Array of effective GIDs that are allowed to
                                                                     //        access the published data
 #define PMIX_WAIT_FOR_CONNECTION            "pmix.wait.conn"        // (bool) wait until the specified connection has been made
+#define PMIX_QUALIFIED_VALUE                "pmix.qual.val"         // (pmix_data_array_t*) Value being provided consists of the primary
+                                                                    //        key-value pair in first position, followed by one or more
+                                                                    //        key-value qualifiers to be used when subsequently retrieving
+                                                                    //        the primary value
 
 
 /* attributes used by host server to pass data to/from the server convenience library - the
@@ -399,6 +414,7 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_REQUIRED_KEY                   "pmix.req.key"          // (char*) key the user needs prior to responding from a dmodex request
 #define PMIX_LOCAL_COLLECTIVE_STATUS        "pmix.loc.col.st"       // (pmix_status_t) status code for local collective operation being
                                                                     //         reported to host by server library
+#define PMIX_SORTED_PROC_ARRAY              "pmix.sorted.parr"      // (bool) Proc array being passed has been sorted
 
 
 /* event handler registration and notification info keys */
@@ -424,7 +440,8 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_EVENT_TEXT_MESSAGE             "pmix.evtext"           // (char*) text message suitable for output by recipient - e.g., describing
                                                                     //         the cause of the event
 #define PMIX_EVENT_TIMESTAMP                "pmix.evtstamp"         // (time_t) System time when the associated event occurred.
-
+#define PMIX_EVENT_ONESHOT                  "pmix.evone"            // (bool) when registering, indicate that this event handler is to be deleted
+                                                                    //        after being invoked
 
 /* fault tolerance-related events */
 #define PMIX_EVENT_TERMINATE_SESSION        "pmix.evterm.sess"      // (bool) RM intends to terminate session
@@ -441,7 +458,16 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_ADD_HOSTFILE                   "pmix.addhostfile"      // (char*) hostfile to add to existing allocation
 #define PMIX_PREFIX                         "pmix.prefix"           // (char*) prefix to use for starting spawned procs
 #define PMIX_WDIR                           "pmix.wdir"             // (char*) working directory for spawned procs
-#define PMIX_DISPLAY_MAP                    "pmix.dispmap"          // (bool) display process map upon spawn
+#define PMIX_WDIR_USER_SPECIFIED            "pmix.wdir.user"        // (bool) User specified the working directory
+#define PMIX_DISPLAY_MAP                    "pmix.dispmap"          // (bool) display placement map upon spawn
+#define PMIX_DISPLAY_MAP_DETAILED           "pmix.dispmapdet"       // (bool) display a highly detailed placement map upon spawn
+#define PMIX_DISPLAY_ALLOCATION             "pmix.dispalloc"        // (bool) display the resource allocation
+#define PMIX_DISPLAY_TOPOLOGY               "pmix.disptopo"         // (char*) comma-delimited list of hosts whose topology is
+                                                                    //         to be displayed
+#define PMIX_DISPLAY_PROCESSORS             "pmix.dispcpus"         // (char*) comma-delimited list of hosts whose available
+                                                                    //         CPUs are to be displayed
+#define PMIX_DISPLAY_PARSEABLE_OUTPUT       "pmix.dispparse"        // (bool) display requested info in a format more amenable
+                                                                    //        to machine parsing
 #define PMIX_PPR                            "pmix.ppr"              // (char*) #procs to spawn on each identified resource
 #define PMIX_MAPBY                          "pmix.mapby"            // (char*) mapping policy
 #define PMIX_RANKBY                         "pmix.rankby"           // (char*) ranking policy
@@ -453,6 +479,10 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_DEBUGGER_DAEMONS               "pmix.debugger"         // (bool) spawned app consists of debugger daemons
 #define PMIX_COSPAWN_APP                    "pmix.cospawn"          // (bool) designated app is to be spawned as a disconnected
                                                                     //        job - i.e., not part of the "comm_world" of the job
+#define PMIX_COLOCATE_PROCS                 "pmix.colproc"          // (pmix_data_array_t*) Array of pmix_proc_t identifying the procs
+                                                                    //        with which the new job's procs are to be colocated
+#define PMIX_COLOCATE_NPERPROC              "pmix.colnum.proc"      // (uint16_t) Number of procs to colocate with each identified proc
+#define PMIX_COLOCATE_NPERNODE              "pmix.colnum.node"      // (uint16_t) Number of procs to colocate on the node of each identified proc
 #define PMIX_SET_SESSION_CWD                "pmix.ssncwd"           // (bool) set the application's current working directory to
                                                                     //        the session working directory assigned by the RM
 #define PMIX_INDEX_ARGV                     "pmix.indxargv"         // (bool) mark the argv with the rank of the proc
@@ -491,6 +521,19 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_NOTIFY_PROC_ABNORMAL_TERMINATION   "pmix.noteabproc"   // (bool) Requests that the launcher generate the PMIX_EVENT_PROC_TERMINATED
                                                                     //        event only when a process abnormally terminates.
 #define PMIX_ENVARS_HARVESTED               "pmix.evar.hvstd"       // (bool) Envars have been harvested by the spawn requestor
+#define PMIX_RUNTIME_OPTIONS                "pmix.runopt"           // (char*) Environment-specific runtime directives that control job behavior
+#define PMIX_ABORT_NON_ZERO_TERM            "pmix.abnz"             // (bool) Abort the spawned job if any process terminates with non-zero status
+#define PMIX_DO_NOT_LAUNCH                  "pmix.dnl"              // (bool) Execute all procedures to prepare the requested job for launch,
+                                                                    //        but do not launch it. Typically combined with the PMIX_DISPLAY_MAP
+                                                                    //        or PMIX_DISPLAY_MAP_DETAILED for debugging purposes.
+#define PMIX_SHOW_LAUNCH_PROGRESS           "pmix.showprog"         // (bool) Provide periodic progress reports on job launch procedure (e.g., after
+                                                                    //        every 100 processes have been spawned)
+#define PMIX_AGGREGATE_HELP                 "pmix.agg.help"         // (bool) Aggregate help messages, reporting each unique help message once
+                                                                    //        accompanied by the number of processes that reported it
+#define PMIX_REPORT_CHILD_SEP               "pmix.rptchildsep"      // (bool) Report the exit status of any child jobs spawned by the primary job
+                                                                    //        separately. If false, then the final exit status reported will be
+                                                                    //        zero if the primary job and all spawned jobs exit normally, or the
+                                                                    //        first non-zero status returned by either primary or child jobs.
 
 
 /* query keys - value type shown is the type of the value that will be RETURNED by that key  */
@@ -512,7 +555,7 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_QUERY_PROC_TABLE               "pmix.qry.ptable"       // (pmix_data_array_t*) returns (pmix_data_array_t*) an array of pmix_proc_info_t
                                                                     //         REQUIRES a PMIX_NSPACE qualifier indicating the nspace being queried
 #define PMIX_QUERY_LOCAL_PROC_TABLE         "pmix.qry.lptable"      // (pmix_data_array_t*) returns (pmix_data_array_t*) an array of pmix_proc_info_t
-                                                                    //         of pmix_proc_info_t for procs in job on same node
+                                                                    //         for procs in job on same node
                                                                     //         REQUIRES a PMIX_NSPACE qualifier indicating the nspace being queried
 #define PMIX_QUERY_AUTHORIZATIONS           "pmix.qry.auths"        // (pmix_data_array_t*) return operations tool is authorized to perform. The contents
                                                                     //         of the array elements have not yet been standardized. NO QUALIFIERS
@@ -522,7 +565,14 @@ typedef uint32_t pmix_rank_t;
                                                                     //        SUPPORTED QUALIFIERS: PMIX_NSPACE/PMIX_RANK, or PMIX_PROCID of specific proc(s)
                                                                     //        whose info is being requested
 #define PMIX_QUERY_ALLOC_STATUS             "pmix.query.alloc"      // (char*) return a string reporting status of an allocation request
-                                                                    //         REQUIRES a PMIX_ALLOC_ID qualifier indicating the allocation request being queried
+                                                                    //         REQUIRES a PMIX_ALLOC_REQUEST_ID qualifier indicating the allocation request
+                                                                    //         being queried
+#define PMIX_QUERY_ALLOCATION               "pmix.query.allc"       // (pmix_data_array_t*) returns an array of pmix_info_t describing the nodes known to the
+                                                                    //         server. Each array element will consist of the PMIX_NODE_INFO key containing
+                                                                    //         a pmix_data_array_t of pmix_info_t - the first element of the array must be
+                                                                    //         the hostname of that node, with additional info on the node in subsequent entries.
+                                                                    //         SUPPORTED_QUALIFIER: a PMIX_ALLOC_ID qualifier indicating the specific
+                                                                    //         allocation of interest
 #define PMIX_TIME_REMAINING                 "pmix.time.remaining"   // (uint32_t) returns number of seconds remaining in allocation
                                                                     //         for the specified nspace (defaults to allocation containing the caller)
                                                                     //         SUPPORTED QUALIFIERS: PMIX_NSPACE of the nspace whose info is being requested
@@ -590,7 +640,7 @@ typedef uint32_t pmix_rank_t;
                                                                     //        the query on the key.
 
 
-/* PMIx_Get information retrieval attributes */
+/* PMIx_Get information retrieval qualifiers */
 #define PMIX_SESSION_INFO                   "pmix.ssn.info"         // (bool) Return information about the specified session. If information
                                                                     //        about a session other than the one containing the requesting
                                                                     //        process is desired, then the attribute array must contain a
@@ -627,7 +677,7 @@ typedef uint32_t pmix_rank_t;
                                                                     //        either or both of them may be included.
 #define PMIX_APP_INFO_ARRAY                 "pmix.app.arr"          // (pmix_data_array_t*) Provide an array of pmix_info_t containing app-level
                                                                     //        information. The PMIX_NSPACE or PMIX_JOBID attributes of the job containing
-                                                                    //        the appplication, plus its PMIX_APPNUM attribute, are required to be
+                                                                    //        the application, plus its PMIX_APPNUM attribute, are required to be
                                                                     //        included in the array.
 #define PMIX_PROC_INFO_ARRAY                "pmix.pdata"            // (pmix_data_array_t*) Provide an array of pmix_info_t containing process-realm
                                                                     //        information. The PMIX_RANK and PMIX_NSPACE attributes, or the
@@ -662,6 +712,10 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_LOG_XML_OUTPUT                 "pmix.log.xml"          // (bool) print the output stream in xml format
 #define PMIX_LOG_ONCE                       "pmix.log.once"         // (bool) only log this once with whichever channel can first support it
 #define PMIX_LOG_MSG                        "pmix.log.msg"          // (pmix_byte_object_t) message blob to be sent somewhere
+#define PMIX_LOG_KEY                        "pmix.log.key"          // (char*) key to a logging message
+#define PMIX_LOG_VAL                        "pmix.log.val"          // (char*) value to a logging message
+#define PMIX_LOG_AGG                        "pmix.log.agg"          // (bool) Whether to aggregate and prevent duplicate logging messages
+                                                                    //        based on key value pairs.
 
 #define PMIX_LOG_EMAIL                      "pmix.log.email"        // (pmix_data_array_t*) log via email based on array of pmix_info_t
                                                                     //         containing directives
@@ -756,6 +810,7 @@ typedef uint32_t pmix_rank_t;
                                                                     //         the allocated resources in, for example, a call to PMIx_Spawn
 #define PMIX_ALLOC_NUM_NODES                "pmix.alloc.nnodes"     // (uint64_t) number of nodes
 #define PMIX_ALLOC_NODE_LIST                "pmix.alloc.nlist"      // (char*) regex of specific nodes
+#define PMIX_ALLOC_EXCLUDE                  "pmix.alloc.exclude"    // (char*) regex of nodes to exclude from scheduling consideration
 #define PMIX_ALLOC_NUM_CPUS                 "pmix.alloc.ncpus"      // (uint64_t) number of cpus
 #define PMIX_ALLOC_NUM_CPU_LIST             "pmix.alloc.ncpulist"   // (char*) regex of #cpus for each node
 #define PMIX_ALLOC_CPU_LIST                 "pmix.alloc.cpulist"    // (char*) regex of specific cpus indicating the cpus involved.
@@ -787,7 +842,9 @@ typedef uint32_t pmix_rank_t;
                                                                     //         especially if the "required" flag was not set in the request
 #define PMIX_ALLOC_BANDWIDTH                "pmix.alloc.bw"         // (float) Mbits/sec
 #define PMIX_ALLOC_FABRIC_QOS               "pmix.alloc.netqos"     // (char*) quality of service level
-#define PMIX_ALLOC_TIME                     "pmix.alloc.time"       // (uint32_t) time in seconds that the allocation shall remain valid
+#define PMIX_ALLOC_TIME                     "pmix.alloc.time"       // (char*) time that the allocation shall remain valid. Time is specified in
+                                                                    //         usual time format of months:days:hours:minutes:seconds, scanning
+                                                                    //         from right to left (i.e., a value of "2" equates to 2 seconds)
 #define PMIX_ALLOC_FABRIC_TYPE              "pmix.alloc.nettype"    // (char*) type of desired transport (e.g., tcp, udp)
 #define PMIX_ALLOC_FABRIC_PLANE             "pmix.alloc.netplane"   // (char*) id string for the NIC (aka plane) to be used for this allocation
                                                                     //         (e.g., CIDR for Ethernet)
@@ -795,6 +852,30 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_ALLOC_FABRIC_ENDPTS_NODE       "pmix.alloc.endpts.nd"  // (size_t) number of endpoints to allocate per node
 #define PMIX_ALLOC_FABRIC_SEC_KEY           "pmix.alloc.nsec"       // (pmix_byte_object_t) fabric security key
 #define PMIX_ALLOC_QUEUE                    "pmix.alloc.queue"      // (char*) name of queue being referenced
+#define PMIX_ALLOC_PREEMPTIBLE              "pmix.alloc.preempt"    // (bool) by default, all jobs in the resulting allocation are to be
+                                                                    //        considered preemptible (overridable at per-job level)
+#define PMIX_ALLOC_LEND                     "pmix.alloc.lend"       // (char*) estimated time before the lent resources shall be available for
+                                                                    //         return. Time is specified in usual time format of
+                                                                    //         months:days:hours:minutes:seconds, scanning from right to left
+                                                                    //         (i.e., a value of "2" equates to 2 seconds)
+#define PMIX_ALLOC_IMAGE                    "pmix.alloc.image"      // (char*) name of the image that the requested nodes are to have on them
+#define PMIX_ALLOC_WAIT_ALL_NODES           "pmix.alloc.waitall"    // (bool) whether or not to wait for all nodes to be scheduled before
+                                                                    //        starting to initialize and release nodes for use
+#define PMIX_ALLOC_SHARE                    "pmix.alloc.share"      // (bool) Allow non-exclusive use of specified resources
+#define PMIX_ALLOC_NOSHELL                  "pmix.alloc.noshell"    // (bool) Immediately exit after allocating resources, without running a command.
+#define PMIX_ALLOC_DEPENDENCY               "pmix.alloc.depend"     // (char*) Defer the start of allocation until the specified dependencies have
+                                                                    //         successfully completed.
+#define PMIX_ALLOC_BEGIN                    "pmix.alloc.begin"      // (char*) Direct the scheduler to defer allocation until the specified time. Time
+                                                                    //         may be of the form HH:MM:SS to schedule the session to start at a specific
+                                                                    //         time of day (seconds are optional). If that time is already past, the
+                                                                    //         next day is assumed. You may also specify "midnight" or "noon", and you
+                                                                    //         can have a time-of-day suffixed with AM or PM for running in the morning
+                                                                    //         or the evening. You can also say what day the session should start by
+                                                                    //         specifying a date of the form MMDDYY or MM/DD/YY YYYY-MM-DD. Combine date
+                                                                    //         and time using the usual format YYYY-MM-DD[THH:MM[:SS]]. You can also give
+                                                                    //         times like "now + count" time-units, where the time-units can be "seconds"
+                                                                    //         (default), "minutes", "hours", days, or weeks, or you can ask that the
+                                                                    //         allocation be made "today" or "tomorrow".
 
 
 /* job control attributes */
@@ -816,6 +897,7 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_JOB_CTRL_PROVISION_IMAGE       "pmix.jctrl.pvnimg"     // (char*) name of the image that is to be provisioned
 #define PMIX_JOB_CTRL_PREEMPTIBLE           "pmix.jctrl.preempt"    // (bool) job can be pre-empted
 #define PMIX_JOB_CTRL_TERMINATE             "pmix.jctrl.term"       // (bool) politely terminate the specified procs
+#define PMIX_JOB_CTRL_DEFINE_PSET           "pmix.jctrl.defpset"    // (char*) Pset name to be assigned to the targets
 #define PMIX_REGISTER_CLEANUP               "pmix.reg.cleanup"      // (char*) comma-delimited list of files to
                                                                     //         be removed upon process termination
 #define PMIX_REGISTER_CLEANUP_DIR           "pmix.reg.cleanupdir"   // (char*) comma-delimited list of directories to
@@ -828,6 +910,47 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_CLEANUP_LEAVE_TOPDIR           "pmix.clnup.lvtop"      // (bool) when recursively cleaning subdirs, do not remove
                                                                     //        the top-level directory (the one given in the
                                                                     //        cleanup request)
+/* session control attributes */
+#define PMIX_SESSION_CTRL_ID                "pmix.ssnctrl.id"       // (char*) provide a string identifier for this request
+
+/* session instantiation attributes - called by scheduler
+ * Schedulers calling to create a session are required to provide:
+ *  - the effective userID and groupID that the session should have
+ *    when instantiated.
+ *  - description of the resources that are to be included in the session
+ *  - if applicable, the image that should be provisioned on nodes
+ *    included in the session
+ *  - an array of applications (if any) that are to be started in the
+ *    session once instantiated
+ */
+#define PMIX_SESSION_APP                    "pmix.ssn.app"          // (pmix_data_array_t*) Array of pmix_app_t to be executed in the assigned
+                                                                    //        session upon session instantiation
+#define PMIX_SESSION_PROVISION              "pmix.ssn.pvn"          // (pmix_data_array_t*) description of nodes to be provisioned with
+                                                                    //       specified image
+#define PMIX_SESSION_PROVISION_NODES        "pmix.ssn.pvnnds"       // (char*) regex identifying nodes that are to be provisioned
+#define PMIX_SESSION_PROVISION_IMAGE        "pmix.ssn.pvnimg"       // (char*) name of the image that is to be provisioned
+
+/* session operational attributes - called by scheduler */
+#define PMIX_SESSION_PAUSE                  "pmix.ssn.pause"        // (bool) pause all jobs in the specified session
+#define PMIX_SESSION_RESUME                 "pmix.ssn.resume"       // (bool) "un-pause" all jobs in the specified session
+#define PMIX_SESSION_TERMINATE              "pmix.ssn.terminate"    // (bool) terminate all jobs in the specified session and recover all
+                                                                    //        resources included in the session.
+#define PMIX_SESSION_PREEMPT                "pmix.ssn.preempt"      // (bool) preempt indicated jobs (given in accompanying pmix_info_t via
+                                                                    //        the PMIX_NSPACE attribute) in the specified session and recover
+                                                                    //        all their resources. If no PMIX_NSPACE is specified, then preempt
+                                                                    //        all jobs in the session.
+#define PMIX_SESSION_RESTORE                "pmix.ssn.restore"      // (bool) restore indicated jobs (given in accompanying pmix_info_t via
+                                                                    //        the PMIX_NSPACE attribute) in the specified session, including
+                                                                    //        all their resources. If no PMIX_NSPACE is specified, then restore
+                                                                    //        all jobs in the session.
+#define PMIX_SESSION_SIGNAL                 "pmix.ssn.sig"          // (int) send given signal to all processes of every job in the session
+
+/* session operational attributes - called by RTE */
+#define PMIX_SESSION_COMPLETE               "pmix.ssn.complete"     // (bool) specified session has completed, all resources have been
+                                                                    //        recovered and are available for scheduling. Must include
+                                                                    //        pmix_info_t indicating ID and returned status of any jobs
+                                                                    //        executing in the session.
+
 
 /* monitoring attributes */
 #define PMIX_MONITOR_ID                     "pmix.monitor.id"       // (char*) provide a string identifier for this request
@@ -877,7 +1000,9 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_IOF_PUSH_STDIN                 "pmix.iof.stdin"        // (bool) Used by a tool to request that the PMIx library collect
                                                                     //        the tool's stdin and forward it to the procs specified in
                                                                     //        the PMIx_IOF_push call
-#define PMIX_IOF_TAG_OUTPUT                 "pmix.iof.tag"          // (bool) Tag output with the [nspace,rank] and channel it comes from
+#define PMIX_IOF_TAG_OUTPUT                 "pmix.iof.tag"          // (bool) Tag output with the [local jobid,rank] and channel it comes from
+#define PMIX_IOF_TAG_DETAILED_OUTPUT        "pmix.iof.tagdet"       // (bool) Tag output with the [local jobid,rank][hostname:pid] and channel it comes from
+#define PMIX_IOF_TAG_FULLNAME_OUTPUT        "pmix.iof.tagfull"      // (bool) Tag output with the [nspace,rank] and channel it comes from
 #define PMIX_IOF_RANK_OUTPUT                "pmix.iof.rank"         // (bool) Tag output with the rank it came from
 #define PMIX_IOF_TIMESTAMP_OUTPUT           "pmix.iof.ts"           // (bool) Timestamp output
 #define PMIX_IOF_MERGE_STDERR_STDOUT        "pmix.iof.mrg"          // (bool) merge stdout and stderr streams from application procs
@@ -903,6 +1028,8 @@ typedef uint32_t pmix_rank_t;
                                                                     //        The original output stream(s) destination is restored upon
                                                                     //        termination of the tool.
 #define PMIX_IOF_LOCAL_OUTPUT               "pmix.iof.local"        // (bool) Write output streams to local stdout/err
+#define PMIX_IOF_OUTPUT_RAW                 "pmix.iof.raw"          // (bool) Do not buffer output to be written as complete lines - output
+                                                                    //        characters as the stream delivers them
 
 /* Attributes for controlling contents of application setup data */
 #define PMIX_SETUP_APP_ENVARS               "pmix.setup.env"        // (bool) harvest and include relevant envars
@@ -925,7 +1052,16 @@ typedef uint32_t pmix_rank_t;
 #define PMIX_GROUP_ENDPT_DATA               "pmix.grp.endpt"        // (pmix_byte_object_t) data collected to be shared during construction
 #define PMIX_GROUP_NAMES                    "pmix.pgrp.nm"          // (pmix_data_array_t*) Returns an array of string names of the process groups
                                                                     //        in which the given process is a member.
-
+#define PMIX_GROUP_INFO                     "pmix.grp.info"         // (pmix_data_array_t*) Array of pmix_info_t containing data that is to be
+                                                                    //        shared across all members of a group during group construction
+#define PMIX_GROUP_LOCAL_CID                "pmix.grp.lclid"        // (size_t) local context ID for the specified process member of a group
+#define PMIX_GROUP_ADD_MEMBERS              "pmix.grp.add"          // (pmix_data_array_t*) Array of pmix_proc_t identifying procs that are not
+                                                                    //        included in the membership specified in the procs array passed to
+                                                                    //        the PMIx_Group_construct[_nb] call, but are to be included in the
+                                                                    //        final group. The identified procs will be sent an invitation to
+                                                                    //        join the group during the construction procedure. This is used when
+                                                                    //        some members of the proposed group do not know the full membership
+                                                                    //        and therefore cannot include all members in the call to construct.
 
 /* Storage-Related Attributes */
 #define PMIX_QUERY_STORAGE_LIST             "pmix.strg.list"       // (char*) return comma-delimited list of identifiers for all available storage systems
@@ -958,7 +1094,7 @@ typedef uint32_t pmix_rank_t;
                                                                    //       storage system's atomic unit of transfer (e.g., block size)
 #define PMIX_STORAGE_OBJECTS_USED           "pmix.strg.objuse"     // (uint64_t) Overall used number of objects (e.g., inodes) for the storage system
 #define PMIX_STORAGE_PERSISTENCE            "pmix.strg.persist"    // (pmix_storage_persistence_t) Persistence level of the storage system
-                                                                   //       (e.g., sratch storage or achive storage)
+                                                                   //       (e.g., sratch storage or archive storage)
 #define PMIX_STORAGE_SUGGESTED_XFER_SIZE    "pmix.strg.sxfer"      // (double) Suggested transfer size (in bytes) for the storage system
 #define PMIX_STORAGE_VERSION                "pmix.strg.ver"        // (char*) Version string for the storage system
 
@@ -1096,6 +1232,10 @@ typedef uint32_t pmix_rank_t;
                                                                    //         Named values (i.e., values defined by constant names via a
                                                                    //         typical C-language enum declaration) must be provided as
                                                                    //         their numerical equivalent.
+#define PMIX_QUERY_STABLE_ABI_VERSION       "pmix.qry.stabiver"    // (char*) The PMIx Standard Stable ABI version supported returned in the form of a comma separated list of "MAJOR.MINOR"
+                                                                   //         This attribute can be used with PMIx_Query_info outside of the init/finalize region.
+#define PMIX_QUERY_PROVISIONAL_ABI_VERSION  "pmix.qry.prabiver"    // (char*) The PMIx Standard Provisional ABI version supported returned in the form of a comma separated "MAJOR.MINOR"
+                                                                   //         This attribute can be used with PMIx_Query_info outside of the init/finalize region.
 
 /****    PROCESS STATE DEFINITIONS    ****/
 typedef uint8_t pmix_proc_state_t;
@@ -1167,7 +1307,7 @@ typedef uint8_t pmix_job_state_t;
 typedef int pmix_status_t;
 
 /* v1.x error values - must be fixed in place for backward
- * compatability. Note that some number of these have been
+ * compatibility. Note that some number of these have been
  * deprecated and may not be returned by v2.x and above
  * clients or servers. However, they must always be
  * at least defined to ensure older codes will compile */
@@ -1277,15 +1417,21 @@ typedef int pmix_status_t;
 #define PMIX_ERR_JOB_INSUFFICIENT_RESOURCES         -234
 #define PMIX_ERR_JOB_SYS_OP_FAILED                  -235
 
-/* job-related non-error events */
+/* job/session-related non-error events */
 #define PMIX_EVENT_JOB_START                        -191
 #define PMIX_EVENT_JOB_END                          -145
 #define PMIX_EVENT_SESSION_START                    -192
 #define PMIX_EVENT_SESSION_END                      -193
 
 /* process-related events */
+#define PMIX_ERR_PROC_REQUESTED_ABORT               -8
 #define PMIX_ERR_PROC_TERM_WO_SYNC                  -200
 #define PMIX_EVENT_PROC_TERMINATED                  -201
+#define PMIX_ERR_PROC_KILLED_BY_CMD                 -400
+#define PMIX_ERR_PROC_FAILED_TO_START               -401
+#define PMIX_ERR_PROC_ABORTED_BY_SIG                -402
+#define PMIX_ERR_PROC_SENSOR_BOUND_EXCEEDED         -403
+#define PMIX_ERR_EXIT_NONZERO_TERM                  -404
 
 /* system failures */
 #define PMIX_EVENT_SYS_BASE                         -230
@@ -1310,6 +1456,16 @@ typedef int pmix_status_t;
  * be based on the PMIX_EXTERNAL_ERR_BASE constant and -not- a
  * specific value as the value of the constant may change */
 #define PMIX_EXTERNAL_ERR_BASE                      -3000
+
+/* define the results values for comparisons */
+typedef enum {
+    PMIX_EQUAL,
+    PMIX_VALUE1_GREATER,
+    PMIX_VALUE2_GREATER,
+    PMIX_VALUE_TYPE_DIFFERENT,
+    PMIX_VALUE_INCOMPATIBLE_OBJECTS,
+    PMIX_VALUE_COMPARISON_NOT_AVAIL
+} pmix_value_cmp_t;
 
 /****    PMIX DATA TYPES    ****/
 typedef uint16_t pmix_data_type_t;
@@ -1437,6 +1593,8 @@ typedef uint32_t pmix_info_directives_t;
 #define PMIX_INFO_REQD              0x00000001
 #define PMIX_INFO_ARRAY_END         0x00000002      // mark the end of an array created by PMIX_INFO_CREATE
 #define PMIX_INFO_REQD_PROCESSED    0x00000004      // reqd attribute has been processed
+#define PMIX_INFO_QUALIFIER         0x00000008      // info is a qualifier to the primary value
+#define PMIX_INFO_PERSISTENT        0x00000010      // do not release included value
 /* the top 16-bits are reserved for internal use by
  * implementers - these may be changed inside the
  * PMIx library */
@@ -1444,14 +1602,14 @@ typedef uint32_t pmix_info_directives_t;
 
 /* define a set of directives for allocation requests */
 typedef uint8_t pmix_alloc_directive_t;
-#define PMIX_ALLOC_NEW          1  // new allocation is being requested. The resulting allocation will be
-                                   // disjoint (i.e., not connected in a job sense) from the requesting allocation
-#define PMIX_ALLOC_EXTEND       2  // extend the existing allocation, either in time or as additional resources
-#define PMIX_ALLOC_RELEASE      3  // release part of the existing allocation. Attributes in the accompanying
-                                   // pmix\_info\_t array may be used to specify permanent release of the
-                                   // identified resources, or "lending" of those resources for some period
-                                   // of time.
-#define PMIX_ALLOC_REAQUIRE     4  // reacquire resources that were previously "lent" back to the scheduler
+#define PMIX_ALLOC_NEW          1   // new allocation is being requested. The resulting allocation will be
+                                    // disjoint (i.e., not connected in a job sense) from the requesting allocation
+#define PMIX_ALLOC_EXTEND       2   // extend the existing allocation, either in time or as additional resources
+#define PMIX_ALLOC_RELEASE      3   // release part or all of the existing allocation. Attributes in the accompanying
+                                    // pmix\_info\_t array may be used to specify "lending" of those resources
+                                    // for some period of time.
+#define PMIX_ALLOC_REAQUIRE     4   // reacquire resources that were previously "lent" back to the scheduler
+#define PMIX_ALLOC_REQ_CANCEL   5   // Cancel the indicated allocation request
 
 /* define a value boundary beyond which implementers are free
  * to define their own directive values */
@@ -1551,58 +1709,71 @@ static inline void* pmix_calloc(size_t n, size_t m)
     return calloc(n, m);
 }
 
-/* declare a convenience macro for checking keys */
-#define PMIX_CHECK_KEY(a, b) \
-    (0 == strncmp((a)->key, (b), PMIX_MAX_KEYLEN))
 
-#define PMIX_CHECK_RESERVED_KEY(a) \
-    (0 == strncmp((a), "pmix", 4))
+/**
+ * Provide a safe version of strncpy that doesn't generate
+ * a ton of spurious warnings. Note that not every environment
+ * provides nice string functions, and we aren't concerned about
+ * max performance here
+ *
+ * @param dest Destination string.
+ * @param src Source string.
+ * @param len Size of the dest array - 1
+ *
+ */
+static inline void pmix_strncpy(char *dest,
+                                const char *src,
+                                size_t len)
+{
+    size_t i;
 
-#define PMIX_LOAD_KEY(a, b)                                                 \
-    do {                                                                    \
-        memset((a), 0, PMIX_MAX_KEYLEN+1);                                  \
-        if (NULL != (b)) {                                                  \
-            pmix_strncpy((char*)(a), (const char*)(b), PMIX_MAX_KEYLEN);    \
-        }                                                                   \
-    }while(0)
+    /* use an algorithm that also protects against
+     * non-NULL-terminated src strings */
+    for (i=0; i < len; ++i, ++src, ++dest) {
+        *dest = *src;
+        if ('\0' == *src) {
+            break;
+        }
+    }
+    *dest = '\0';
+}
 
-/* define a convenience macro for loading nspaces */
-#define PMIX_LOAD_NSPACE(a, b)                              \
-    do {                                                    \
-        memset((a), 0, PMIX_MAX_NSLEN+1);                   \
-        if (NULL != (b)) {                                  \
-            pmix_strncpy((char*)(a), (b), PMIX_MAX_NSLEN);  \
-        }                                                   \
-    }while(0)
+static inline size_t pmix_keylen(const char *src)
+{
+    size_t i, maxlen;
 
-/* define a convenience macro for checking nspaces */
-#define PMIX_CHECK_NSPACE(a, b) \
-    (PMIX_NSPACE_INVALID((a)) || PMIX_NSPACE_INVALID((b)) || 0 == strncmp((a), (b), PMIX_MAX_NSLEN))
+    if (NULL == src) {
+        return 0;
+    }
+    maxlen = PMIX_MAX_KEYLEN + 1;
+    /* use an algorithm that also protects against
+     * non-NULL-terminated src strings */
+    for (i=0; i < maxlen; ++i, ++src) {
+        if ('\0' == *src) {
+            break;
+        }
+    }
+    return i;
+}
 
-/* define a convenience macro for loading names */
-#define PMIX_LOAD_PROCID(a, b, c)               \
-    do {                                        \
-        PMIX_LOAD_NSPACE((a)->nspace, (b));     \
-        (a)->rank = (c);                        \
-    }while(0)
+static inline size_t pmix_nslen(const char *src)
+{
+    size_t i, maxlen;
 
-#define PMIX_XFER_PROCID(a, b)      \
-    memcpy((a), (b), sizeof(pmix_proc_t))
+    if (NULL == src) {
+        return 0;
+    }
+    maxlen = PMIX_MAX_NSLEN + 1;
+    /* use an algorithm that also protects against
+     * non-NULL-terminated src strings */
+    for (i=0; i < maxlen; ++i, ++src) {
+        if ('\0' == *src) {
+            break;
+        }
+    }
+    return i;
+}
 
-#define PMIX_PROCID_XFER(a, b) PMIX_XFER_PROCID(a, b)
-
-/* define a convenience macro for checking names */
-#define PMIX_CHECK_PROCID(a, b) \
-    (PMIX_CHECK_NSPACE((a)->nspace, (b)->nspace) && ((a)->rank == (b)->rank || (PMIX_RANK_WILDCARD == (a)->rank || PMIX_RANK_WILDCARD == (b)->rank)))
-
-#define PMIX_CHECK_RANK(a, b) \
-    ((a) == (b) || (PMIX_RANK_WILDCARD == (a) || PMIX_RANK_WILDCARD == (b)))
-
-#define PMIX_NSPACE_INVALID(a) \
-    (NULL == (a) || 0 == pmix_nslen((a)))
-
-#define PMIX_PROCID_INVALID(a)  \
-    (PMIX_NSPACE_INVALID((a)->nspace) || PMIX_RANK_INVALID == (a)->rank)
 
 /****    PMIX COORD    ****/
 /* define coordinate system views */
@@ -1625,47 +1796,6 @@ typedef struct pmix_coord {
     .dims = 0                       \
 }
 
-#define PMIX_COORD_CREATE(m, d, n)                                      \
-    do {                                                                \
-        pmix_coord_t *_m;                                               \
-        _m = (pmix_coord_t*)pmix_calloc((d), sizeof(pmix_coord_t));     \
-        if (NULL != _m) {                                               \
-            _m->view = PMIX_COORD_VIEW_UNDEF;                           \
-            _m->dims = (n);                                             \
-            _m->coord = (uint32_t*)pmix_calloc((n), sizeof(uint32_t));  \
-            (m) = _m;                                                   \
-        }                                                               \
-    } while(0)
-
-#define PMIX_COORD_CONSTRUCT(m)             \
-    do {                                    \
-        (m)->view = PMIX_COORD_VIEW_UNDEF;  \
-        (m)->coord = NULL;                  \
-        (m)->dims = 0;                      \
-    } while(0)
-
-#define PMIX_COORD_DESTRUCT(m)              \
-    do {                                    \
-        (m)->view = PMIX_COORD_VIEW_UNDEF;  \
-        if (NULL != (m)->coord) {           \
-            pmix_free((m)->coord);          \
-            (m)->coord = NULL;              \
-            (m)->dims = 0;                  \
-        }                                   \
-    } while(0)
-
-#define PMIX_COORD_FREE(m, n)                       \
-    do {                                            \
-        size_t _nc_;                                \
-        if (NULL != (m)) {                          \
-            for (_nc_ = 0; _nc_ < (n); _nc_++) {    \
-                PMIX_COORD_DESTRUCT(&(m)[_nc_]);    \
-            }                                       \
-            free((m));                              \
-            (m) = NULL;                             \
-        }                                           \
-    } while(0)
-
 
 /****    PMIX LINK STATES    ****/
 typedef uint8_t pmix_link_state_t;
@@ -1686,18 +1816,6 @@ typedef struct{
     .bitmap = NULL              \
 }
 
-#define PMIX_CPUSET_CONSTRUCT(m) \
-    memset((m), 0, sizeof(pmix_cpuset_t))
-
-#define PMIX_CPUSET_DESTRUCT(m) \
-    pmix_hwloc_destruct_cpuset((m))
-
-#define PMIX_CPUSET_CREATE(m, n)    \
-    (m) = (pmix_cpuset_t*)calloc((n), sizeof(pmix_cpuset_t));
-
-#define PMIX_CPUSET_FREE(m, n) \
-    pmix_hwloc_release_cpuset((m), (n))
-
 
 /****    PMIX BIND ENVELOPE    ****/
 typedef uint8_t pmix_bind_envelope_t;
@@ -1717,17 +1835,6 @@ typedef struct {
     .topology = NULL                \
 }
 
-#define PMIX_TOPOLOGY_CONSTRUCT(m) \
-    memset((m), 0, sizeof(pmix_topology_t))
-
-#define PMIX_TOPOLOGY_DESTRUCT(m) \
-    pmix_hwloc_destruct_topology((m))
-
-#define PMIX_TOPOLOGY_CREATE(m, n) \
-    (m) = (pmix_topology_t*)calloc(n, sizeof(pmix_topology_t))
-
-#define PMIX_TOPOLOGY_FREE(m, n) \
-    pmix_hwloc_release_topology((m), (n))
 
 /**** PMIX RELATIVE LOCALITY    ****/
 typedef uint16_t pmix_locality_t;
@@ -1761,39 +1868,6 @@ typedef struct pmix_geometry {
     .ncoords = 0                    \
 }
 
-#define PMIX_GEOMETRY_CONSTRUCT(m) \
-    memset((m), 0, sizeof(pmix_geometry_t));
-
-#define PMIX_GEOMETRY_DESTRUCT(m)                               \
-    do {                                                        \
-        if (NULL != (m)->uuid) {                                \
-            free((m)->uuid);                                    \
-            (m)->uuid = NULL;                                   \
-        }                                                       \
-        if (NULL != (m)->osname) {                              \
-            free((m)->osname);                                  \
-            (m)->osname = NULL;                                 \
-        }                                                       \
-        if (NULL != (m)->coordinates) {                         \
-            PMIX_COORD_FREE((m)->coordinates, (m)->ncoords);    \
-        }                                                       \
-    } while(0)
-
-#define PMIX_GEOMETRY_CREATE(m, n)                              \
-    (m) = (pmix_geometry_t*)calloc((n), sizeof(pmix_geometry_t))
-
-#define PMIX_GEOMETRY_FREE(m, n)                    \
-    do {                                            \
-        size_t _i;                                  \
-        if (NULL != (m)) {                          \
-            for (_i=0; _i < (n); _i++) {            \
-                PMIX_GEOMETRY_DESTRUCT(&(m)[_i]);   \
-            }                                       \
-            free((m));                              \
-            (m) = NULL;                             \
-        }                                           \
-    } while(0)
-
 
 /****    PMIX_DEVICE_TYPE    ****/
 typedef uint64_t pmix_device_type_t;
@@ -1823,49 +1897,6 @@ typedef struct pmix_device_distance {
     .maxdist = 0                        \
 }
 
-#define PMIX_DEVICE_DIST_CONSTRUCT(m)                       \
-    do {                                                    \
-        memset((m), 0, sizeof(pmix_device_distance_t));     \
-        (m)->mindist = UINT16_MAX;                          \
-        (m)->maxdist = UINT16_MAX;                          \
-    } while(0);
-
-#define PMIX_DEVICE_DIST_DESTRUCT(m)    \
-    do {                                \
-        if (NULL != ((m)->uuid)) {      \
-            free((m)->uuid);            \
-        }                               \
-        if (NULL != ((m)->osname)) {    \
-            free((m)->osname);          \
-        }                               \
-    } while(0)
-
-#define PMIX_DEVICE_DIST_CREATE(m, n)                                                       \
-    do {                                                                                    \
-        size_t _i;                                                                          \
-        pmix_device_distance_t *_m;                                                         \
-        _m = (pmix_device_distance_t*)pmix_calloc((n), sizeof(pmix_device_distance_t));     \
-        if (NULL != _m) {                                                                   \
-            for (_i=0; _i < (n); _i++) {                                                    \
-                _m[_i].mindist = UINT16_MAX;                                                \
-                _m[_i].maxdist = UINT16_MAX;                                                \
-            }                                                                               \
-        }                                                                                   \
-        (m) = _m;                                                                           \
-    } while(0)
-
-#define PMIX_DEVICE_DIST_FREE(m, n)                     \
-    do {                                                \
-        size_t _i;                                      \
-        if (NULL != (m)) {                              \
-            for (_i=0; _i < (n); _i++) {                \
-                PMIX_DEVICE_DIST_DESTRUCT(&(m)[_i]);    \
-            }                                           \
-            free((m));                                  \
-            (m) = NULL;                                 \
-        }                                               \
-    } while(0)
-
 
 /****    PMIX BYTE OBJECT    ****/
 typedef struct pmix_byte_object {
@@ -1878,49 +1909,6 @@ typedef struct pmix_byte_object {
     .bytes = NULL,                      \
     .size = 0                           \
 }
-
-#define PMIX_BYTE_OBJECT_CREATE(m, n)   \
-    do {                                \
-        (m) = (pmix_byte_object_t*)pmix_malloc((n) * sizeof(pmix_byte_object_t));   \
-        if (NULL != (m)) {                                                     \
-            memset((m), 0, (n)*sizeof(pmix_byte_object_t));                    \
-        }                                                                      \
-    } while(0)
-
-#define PMIX_BYTE_OBJECT_CONSTRUCT(m)   \
-    do {                                \
-        (m)->bytes = NULL;              \
-        (m)->size = 0;                  \
-    } while(0)
-
-#define PMIX_BYTE_OBJECT_DESTRUCT(m)    \
-    do {                                \
-        if (NULL != (m)->bytes) {       \
-            pmix_free((m)->bytes);      \
-        }                               \
-        (m)->bytes = NULL;              \
-        (m)->size = 0;                  \
-    } while(0)
-
-#define PMIX_BYTE_OBJECT_FREE(m, n)                     \
-    do {                                                \
-        size_t _bon;                                    \
-        if (NULL != (m)) {                              \
-            for (_bon=0; _bon < n; _bon++) {            \
-                PMIX_BYTE_OBJECT_DESTRUCT(&(m)[_bon]);  \
-            }                                           \
-            pmix_free((m));                             \
-            (m) = NULL;                                 \
-        }                                               \
-    } while(0)
-
-#define PMIX_BYTE_OBJECT_LOAD(b, d, s)      \
-    do {                                    \
-        (b)->bytes = (char*)(d);            \
-        (d) = NULL;                         \
-        (b)->size = (s);                    \
-        (s) = 0;                            \
-    } while(0)
 
 
 /****    PMIX ENDPOINT    ****/
@@ -1936,38 +1924,6 @@ typedef struct pmix_endpoint {
     .osname = NULL,                         \
     .endpt = PMIX_BYTE_OBJECT_STATIC_INIT   \
 }
-
-#define PMIX_ENDPOINT_CONSTRUCT(m)      \
-    memset((m), 0, sizeof(pmix_endpoint_t))
-
-#define PMIX_ENDPOINT_DESTRUCT(m)       \
-    do {                                \
-        if (NULL != (m)->uuid) {        \
-            free((m)->uuid);            \
-        }                               \
-        if (NULL != (m)->osname) {      \
-            free((m)->osname);          \
-        }                               \
-        if (NULL != (m)->endpt.bytes) { \
-            free((m)->endpt.bytes);     \
-        }                               \
-    } while(0)
-
-#define PMIX_ENDPOINT_CREATE(m, n)      \
-    (m) = (pmix_endpoint_t*)calloc((n), sizeof(pmix_endpoint_t))
-
-#define PMIX_ENDPOINT_FREE(m, n)                    \
-    do {                                            \
-        size_t _n;                                  \
-        if (NULL != (m)) {                          \
-            for (_n=0; _n < (n); _n++) {            \
-                PMIX_ENDPOINT_DESTRUCT(&((m)[_n])); \
-            }                                       \
-            free((m));                              \
-            (m) = NULL;                             \
-        }                                           \
-    } while(0)
-
 
 
 /****    PMIX ENVAR STRUCT   ****/
@@ -1992,50 +1948,24 @@ typedef struct {
     .separator = '\0'           \
 }
 
-#define PMIX_ENVAR_CREATE(m, n)                                     \
-    do {                                                            \
-        (m) = (pmix_envar_t*)pmix_calloc((n) , sizeof(pmix_envar_t));    \
-    } while (0)
-#define PMIX_ENVAR_FREE(m, n)                       \
-    do {                                            \
-        size_t _ek;                                 \
-        if (NULL != (m)) {                          \
-            for (_ek=0; _ek < (n); _ek++) {         \
-               PMIX_ENVAR_DESTRUCT(&(m)[_ek]);      \
-            }                                       \
-            pmix_free((m));                              \
-        }                                           \
-    } while (0)
-#define PMIX_ENVAR_CONSTRUCT(m)        \
-    do {                               \
-        (m)->envar = NULL;             \
-        (m)->value = NULL;             \
-        (m)->separator = '\0';         \
-    } while(0)
-#define PMIX_ENVAR_DESTRUCT(m)         \
-    do {                               \
-        if (NULL != (m)->envar) {      \
-            pmix_free((m)->envar);          \
-            (m)->envar = NULL;         \
-        }                              \
-        if (NULL != (m)->value) {      \
-            pmix_free((m)->value);          \
-            (m)->value = NULL;         \
-        }                              \
-    } while(0)
-#define PMIX_ENVAR_LOAD(m, e, v, s)    \
-    do {                               \
-        if (NULL != (e)) {             \
-            (m)->envar = strdup(e);    \
-        }                              \
-        if (NULL != (v)) {             \
-            (m)->value = strdup(v);    \
-        }                              \
-        (m)->separator = (s);          \
-    } while(0)
 
+/****    PMIX DATA BUFFER    ****/
+typedef struct pmix_data_buffer {
+    /** Start of my memory */
+    char *base_ptr;
+    /** Where the next data will be packed to (within the allocated
+        memory starting at base_ptr) */
+    char *pack_ptr;
+    /** Where the next data will be unpacked from (within the
+        allocated memory starting as base_ptr) */
+    char *unpack_ptr;
+    /** Number of bytes allocated (starting at base_ptr) */
+    size_t bytes_allocated;
+    /** Number of bytes used by the buffer (i.e., amount of data --
+        including overhead -- packed in the buffer) */
+    size_t bytes_used;
+} pmix_data_buffer_t;
 
-/****    PMIX DATA BUFFER MACROS   ****/
 #define PMIX_DATA_BUFFER_STATIC_INIT    \
 {                                       \
     .base_ptr = NULL,                   \
@@ -2044,52 +1974,7 @@ typedef struct {
     .bytes_allocated = 0,               \
     .bytes_used = 0                     \
 }
-#define PMIX_DATA_BUFFER_CREATE(m)                                          \
-    do {                                                                    \
-        (m) = (pmix_data_buffer_t*)pmix_calloc(1, sizeof(pmix_data_buffer_t));   \
-    } while (0)
-#define PMIX_DATA_BUFFER_RELEASE(m)             \
-    do {                                        \
-        if (NULL != (m)->base_ptr) {            \
-            pmix_free((m)->base_ptr);                \
-        }                                       \
-        pmix_free((m));                              \
-        (m) = NULL;                             \
-    } while (0)
-#define PMIX_DATA_BUFFER_CONSTRUCT(m)       \
-    memset((m), 0, sizeof(pmix_data_buffer_t))
-#define PMIX_DATA_BUFFER_DESTRUCT(m)        \
-    do {                                    \
-        if (NULL != (m)->base_ptr) {        \
-            pmix_free((m)->base_ptr);            \
-            (m)->base_ptr = NULL;           \
-        }                                   \
-        (m)->pack_ptr = NULL;               \
-        (m)->unpack_ptr = NULL;             \
-        (m)->bytes_allocated = 0;           \
-        (m)->bytes_used = 0;                \
-    } while (0)
-#define PMIX_DATA_BUFFER_LOAD(b, d, s)  \
-    do {                                \
-        pmix_byte_object_t _bo;         \
-        _bo.bytes = (char*)(d);         \
-        _bo.size = (s);                 \
-        PMIx_Data_load((b), &_bo);      \
-    } while(0)
 
-#define PMIX_DATA_BUFFER_UNLOAD(b, d, s)    \
-    do {                                    \
-        pmix_byte_object_t _bo;             \
-        pmix_status_t _r;                   \
-        _r = PMIx_Data_unload((b), &_bo);   \
-        if (PMIX_SUCCESS == _r) {           \
-            (d) = _bo.bytes;                \
-            (s) = _bo.size;                 \
-        } else {                            \
-            (d) = NULL;                     \
-            (s) = 0;                        \
-        }                                   \
-    } while(0)
 
 /****    PMIX PROC OBJECT    ****/
 typedef struct pmix_proc {
@@ -2102,65 +1987,6 @@ typedef struct pmix_proc {
     .nspace = {0},              \
     .rank = PMIX_RANK_UNDEF     \
 }
-
-#define PMIX_PROC_CREATE(m, n)                                  \
-    do {                                                        \
-        (m) = (pmix_proc_t*)pmix_calloc((n) , sizeof(pmix_proc_t));  \
-    } while (0)
-
-#define PMIX_PROC_RELEASE(m)    \
-    do {                        \
-        pmix_free((m));         \
-        (m) = NULL;             \
-    } while (0)
-
-#define PMIX_PROC_CONSTRUCT(m)                  \
-    do {                                        \
-        memset((m), 0, sizeof(pmix_proc_t));    \
-    } while (0)
-
-#define PMIX_PROC_DESTRUCT(m)
-
-#define PMIX_PROC_FREE(m, n)                    \
-    do {                                        \
-        if (NULL != (m)) {                      \
-            pmix_free((m));                          \
-            (m) = NULL;                         \
-        }                                       \
-    } while (0)
-
-#define PMIX_PROC_LOAD(m, n, r)                             \
-    do {                                                    \
-        PMIX_PROC_CONSTRUCT((m));                           \
-        pmix_strncpy((char*)(m)->nspace, (n), PMIX_MAX_NSLEN);    \
-        (m)->rank = (r);                                    \
-    } while(0)
-
-#define PMIX_MULTICLUSTER_NSPACE_CONSTRUCT(t, c, n)                         \
-    do {                                                                    \
-        size_t _len;                                                        \
-        memset((t), 0, PMIX_MAX_NSLEN+1);                                   \
-        _len = pmix_nslen((c));                                             \
-        if ((_len + pmix_nslen((n))) < PMIX_MAX_NSLEN) {                    \
-            pmix_strncpy((char*)(t), (c), PMIX_MAX_NSLEN);                  \
-            (t)[_len] = ':';                                                \
-            pmix_strncpy((char*)&(t)[_len+1], (n), PMIX_MAX_NSLEN - _len);  \
-        }                                                                   \
-    } while(0)
-
-#define PMIX_MULTICLUSTER_NSPACE_PARSE(t, c, n)             \
-    do {                                                    \
-        size_t _n, _j;                                      \
-        for (_n=0; '\0' != (t)[_n] && ':' != (t)[_n] &&     \
-             _n <= PMIX_MAX_NSLEN; _n++) {                  \
-            (c)[_n] = (t)[_n];                              \
-        }                                                   \
-        _n++;                                               \
-        for (_j=0; _n <= PMIX_MAX_NSLEN &&                  \
-             '\0' != (t)[_n]; _n++, _j++) {                 \
-            (n)[_j] = (t)[_n];                              \
-        }                                                   \
-    } while(0)
 
 
 /****    PMIX PROC INFO STRUCT    ****/
@@ -2183,43 +2009,6 @@ typedef struct pmix_proc_info {
     .state = PMIX_PROC_STATE_UNDEF  \
 }
 
-#define PMIX_PROC_INFO_CREATE(m, n)                                         \
-    do {                                                                    \
-        (m) = (pmix_proc_info_t*)pmix_calloc((n) , sizeof(pmix_proc_info_t));    \
-    } while (0)
-
-#define PMIX_PROC_INFO_RELEASE(m)      \
-    do {                               \
-        PMIX_PROC_INFO_FREE((m), 1);   \
-    } while (0)
-
-#define PMIX_PROC_INFO_CONSTRUCT(m)                 \
-    do {                                            \
-        memset((m), 0, sizeof(pmix_proc_info_t));   \
-    } while (0)
-
-#define PMIX_PROC_INFO_DESTRUCT(m)              \
-    do {                                        \
-        if (NULL != (m)->hostname) {            \
-            pmix_free((m)->hostname);                \
-            (m)->hostname = NULL;               \
-        }                                       \
-        if (NULL != (m)->executable_name) {     \
-            pmix_free((m)->executable_name);         \
-            (m)->executable_name = NULL;        \
-        }                                       \
-    } while(0)
-
-#define PMIX_PROC_INFO_FREE(m, n)                   \
-    do {                                            \
-        size_t _k;                                  \
-        if (NULL != (m)) {                          \
-            for (_k=0; _k < (n); _k++) {            \
-                PMIX_PROC_INFO_DESTRUCT(&(m)[_k]);  \
-            }                                       \
-            pmix_free((m));                              \
-        }                                           \
-    } while (0)
 
 
 /****    PMIX DATA ARRAY STRUCT    ****/
@@ -2237,32 +2026,10 @@ typedef struct pmix_data_array {
     .array = NULL                       \
 }
 
-/**** THE PMIX_DATA_ARRAY SUPPORT MACROS ARE DEFINED ****/
-/**** DOWN BELOW (NEAR THE BOTTOM OF THE FILE) TO    ****/
-/**** AVOID CIRCULAR DEPENDENCIES                    ****/
-
-
 /* we cannot forward-declare the pmix_regattr_t struct
  * as Cython doesn't know what to do with it. Thus, we
  * will utilize the void* entry of the pmix_value_t to
  * hold the pointer to pmix_regattr_t */
-
-/****    PMIX DATA BUFFER    ****/
-typedef struct pmix_data_buffer {
-    /** Start of my memory */
-    char *base_ptr;
-    /** Where the next data will be packed to (within the allocated
-        memory starting at base_ptr) */
-    char *pack_ptr;
-    /** Where the next data will be unpacked from (within the
-        allocated memory starting as base_ptr) */
-    char *unpack_ptr;
-    /** Number of bytes allocated (starting at base_ptr) */
-    size_t bytes_allocated;
-    /** Number of bytes used by the buffer (i.e., amount of data --
-        including overhead -- packed in the buffer) */
-    size_t bytes_used;
-} pmix_data_buffer_t;
 
 /****   STATISTICS STRUCTURES  ****/
 typedef struct pmix_proc_stats {
@@ -2305,43 +2072,6 @@ typedef struct pmix_proc_stats {
     .sample_time = {0, 0}               \
 }
 
-#define PMIX_PROC_STATS_CREATE(m, n)                                            \
-    do {                                                                        \
-        (m) = (pmix_proc_stats_t*)pmix_calloc((n) , sizeof(pmix_proc_stats_t)); \
-    } while (0)
-
-#define PMIX_PROC_STATS_RELEASE(m)      \
-    do {                                \
-        PMIX_PROC_STATS_FREE((m), 1);   \
-    } while (0)
-
-#define PMIX_PROC_STATS_CONSTRUCT(m)                \
-    do {                                            \
-        memset((m), 0, sizeof(pmix_proc_stats_t));  \
-    } while (0)
-
-#define PMIX_PROC_STATS_DESTRUCT(m)     \
-    do {                                \
-        if (NULL != (m)->node) {        \
-            pmix_free((m)->node);       \
-            (m)->node = NULL;           \
-        }                               \
-        if (NULL != (m)->cmd) {         \
-            pmix_free((m)->cmd);        \
-            (m)->cmd = NULL;            \
-        }                               \
-    } while(0)
-
-#define PMIX_PROC_STATS_FREE(m, n)                  \
-    do {                                            \
-        size_t _k;                                  \
-        if (NULL != (m)) {                          \
-            for (_k=0; _k < (n); _k++) {            \
-                PMIX_PROC_STATS_DESTRUCT(&(m)[_k]); \
-            }                                       \
-            pmix_free((m));                         \
-        }                                           \
-    } while (0)
 
 typedef struct {
     char *disk;
@@ -2374,39 +2104,6 @@ typedef struct {
     .weighted_milliseconds_io = 0       \
 }
 
-#define PMIX_DISK_STATS_CREATE(m, n)                                            \
-    do {                                                                        \
-        (m) = (pmix_disk_stats_t*)pmix_calloc((n) , sizeof(pmix_disk_stats_t)); \
-    } while (0)
-
-#define PMIX_DISK_STATS_RELEASE(m)      \
-    do {                                \
-        PMIX_DISK_STATS_FREE((m), 1);   \
-    } while (0)
-
-#define PMIX_DISK_STATS_CONSTRUCT(m)                \
-    do {                                            \
-        memset((m), 0, sizeof(pmix_disk_stats_t));  \
-    } while (0)
-
-#define PMIX_DISK_STATS_DESTRUCT(m)     \
-    do {                                \
-        if (NULL != (m)->disk) {        \
-            pmix_free((m)->disk);       \
-            (m)->disk = NULL;           \
-        }                               \
-    } while(0)
-
-#define PMIX_DISK_STATS_FREE(m, n)                  \
-    do {                                            \
-        size_t _k;                                  \
-        if (NULL != (m)) {                          \
-            for (_k=0; _k < (n); _k++) {            \
-                PMIX_DISK_STATS_DESTRUCT(&(m)[_k]); \
-            }                                       \
-            pmix_free((m));                         \
-        }                                           \
-    } while (0)
 
 typedef struct {
     char *net_interface;
@@ -2429,39 +2126,6 @@ typedef struct {
     .num_send_errs = 0              \
 }
 
-#define PMIX_NET_STATS_CREATE(m, n)                                             \
-    do {                                                                        \
-        (m) = (pmix_net_stats_t*)pmix_calloc((n) , sizeof(pmix_net_stats_t));   \
-    } while (0)
-
-#define PMIX_NET_STATS_RELEASE(m)       \
-    do {                                \
-        PMIX_NET_STATS_FREE((m), 1);    \
-    } while (0)
-
-#define PMIX_NET_STATS_CONSTRUCT(m)                 \
-    do {                                            \
-        memset((m), 0, sizeof(pmix_net_stats_t));   \
-    } while (0)
-
-#define PMIX_NET_STATS_DESTRUCT(m)          \
-    do {                                    \
-        if (NULL != (m)->net_interface) {   \
-            pmix_free((m)->net_interface);  \
-            (m)->net_interface = NULL;      \
-        }                                   \
-    } while(0)
-
-#define PMIX_NET_STATS_FREE(m, n)                   \
-    do {                                            \
-        size_t _k;                                  \
-        if (NULL != (m)) {                          \
-            for (_k=0; _k < (n); _k++) {            \
-                PMIX_NET_STATS_DESTRUCT(&(m)[_k]);  \
-            }                                       \
-            pmix_free((m));                         \
-        }                                           \
-    } while (0)
 
 typedef struct {
     char *node;
@@ -2509,45 +2173,6 @@ typedef struct {
     .nnetstats = 0                      \
 }
 
-#define PMIX_NODE_STATS_CREATE(m, n)                                            \
-    do {                                                                        \
-        (m) = (pmix_node_stats_t*)pmix_calloc((n) , sizeof(pmix_node_stats_t)); \
-    } while (0)
-
-#define PMIX_NODE_STATS_RELEASE(m)      \
-    do {                                \
-        PMIX_NODE_STATS_FREE((m), 1);   \
-    } while (0)
-
-#define PMIX_NODE_STATS_CONSTRUCT(m)                \
-    do {                                            \
-        memset((m), 0, sizeof(pmix_node_stats_t));  \
-    } while (0)
-
-#define PMIX_NODE_STATS_DESTRUCT(m)                                 \
-    do {                                                            \
-        if (NULL != (m)->node) {                                    \
-            pmix_free((m)->node);                                   \
-            (m)->node = NULL;                                       \
-        }                                                           \
-        if (NULL != (m)->diskstats) {                               \
-            PMIX_DISK_STATS_FREE((m)->diskstats, (m)->ndiskstats);  \
-        }                                                           \
-        if (NULL != (m)->netstats) {                                \
-            PMIX_NET_STATS_FREE((m)->netstats, (m)->nnetstats);     \
-        }                                                           \
-    } while(0)
-
-#define PMIX_NET_STATS_FREE(m, n)                   \
-    do {                                            \
-        size_t _k;                                  \
-        if (NULL != (m)) {                          \
-            for (_k=0; _k < (n); _k++) {            \
-                PMIX_NET_STATS_DESTRUCT(&(m)[_k]);  \
-            }                                       \
-            pmix_free((m));                         \
-        }                                           \
-    } while (0)
 
 /****    PMIX VALUE STRUCT    ****/
 
@@ -2616,73 +2241,6 @@ typedef struct pmix_value {
     .data.ptr = NULL            \
 }
 
-/* allocate and initialize a specified number of value structs */
-#define PMIX_VALUE_CREATE(m, n)                                 \
-    do {                                                        \
-        int _ii;                                                \
-        pmix_value_t *_v;                                       \
-        (m) = (pmix_value_t*)pmix_calloc((n), sizeof(pmix_value_t)); \
-        _v = (pmix_value_t*)(m);                                \
-        if (NULL != (m)) {                                      \
-            for (_ii=0; _ii < (int)(n); _ii++) {                \
-                _v[_ii].type = PMIX_UNDEF;                     \
-            }                                                   \
-        }                                                       \
-    } while (0)
-
-/* release a single pmix_value_t struct, including its data */
-#define PMIX_VALUE_RELEASE(m)       \
-    do {                            \
-        PMIX_VALUE_DESTRUCT((m));   \
-        pmix_free((m));                  \
-        (m) = NULL;                 \
-    } while (0)
-
-/* initialize a single value struct */
-#define PMIX_VALUE_CONSTRUCT(m)                 \
-    do {                                        \
-        memset((m), 0, sizeof(pmix_value_t));   \
-        (m)->type = PMIX_UNDEF;                 \
-    } while (0)
-
-/* release the memory in the value struct data field */
-#define PMIX_VALUE_DESTRUCT(m) pmix_value_destruct(m)
-
-#define PMIX_VALUE_FREE(m, n)                           \
-    do {                                                \
-        size_t _vv;                                     \
-        if (NULL != (m)) {                              \
-            for (_vv=0; _vv < (n); _vv++) {             \
-                PMIX_VALUE_DESTRUCT(&((m)[_vv]));       \
-            }                                           \
-            pmix_free((m));                                  \
-            (m) = NULL;                                 \
-        }                                               \
-    } while (0)
-
-#define PMIX_VALUE_LOAD(v, d, t) \
-    pmix_value_load((v), (d), (t))
-
-#define PMIX_VALUE_UNLOAD(r, k, d, s)      \
-    (r) = pmix_value_unload((k), (d), (s))
-
-#define PMIX_VALUE_XFER(r, v, s)                                \
-    do {                                                        \
-        if (NULL == (v)) {                                      \
-            (v) = (pmix_value_t*)pmix_malloc(sizeof(pmix_value_t));  \
-            if (NULL == (v)) {                                  \
-                (r) = PMIX_ERR_NOMEM;                           \
-            } else {                                            \
-                (r) = pmix_value_xfer((v), (s));                \
-            }                                                   \
-        } else {                                                \
-            (r) = pmix_value_xfer((v), (s));                    \
-        }                                                       \
-    } while(0)
-
-#define PMIX_VALUE_XFER_DIRECT(r, v, s)     \
-    (r) = pmix_value_xfer((v), (s))
-
 #define PMIX_VALUE_GET_NUMBER(s, m, n, t)               \
     do {                                                \
         (s) = PMIX_SUCCESS;                             \
@@ -2714,6 +2272,10 @@ typedef struct pmix_value {
             (n) = (t)((m)->data.dval);                  \
         } else if (PMIX_PID == (m)->type) {             \
             (n) = (t)((m)->data.pid);                   \
+        } else if (PMIX_PROC_RANK == (m)->type) {       \
+            (n) = (t)((m)->data.rank);                  \
+        } else if (PMIX_STATUS == (m)->type) {          \
+            (n) = (t)((m)->data.status);                \
         } else {                                        \
             (s) = PMIX_ERR_BAD_PARAM;                   \
         }                                               \
@@ -2733,135 +2295,12 @@ typedef struct pmix_info {
     .value = PMIX_VALUE_STATIC_INIT \
 }
 
-/* utility macros for working with pmix_info_t structs */
-#define PMIX_INFO_CREATE(m, n)                                  \
-    do {                                                        \
-        pmix_info_t *_i;                                        \
-        (m) = (pmix_info_t*)pmix_calloc((n), sizeof(pmix_info_t));   \
-	    if (NULL != (m)) {                                      \
-            _i = (pmix_info_t*)(m);                             \
-            _i[(n)-1].flags = PMIX_INFO_ARRAY_END;              \
-        }                                                       \
-    } while (0)
 
-#define PMIX_INFO_CONSTRUCT(m)                  \
-    do {                                        \
-        memset((m), 0, sizeof(pmix_info_t));    \
-        (m)->value.type = PMIX_UNDEF;           \
-    } while (0)
-
-#define PMIX_INFO_DESTRUCT(m) \
-    do {                                        \
-        PMIX_VALUE_DESTRUCT(&(m)->value);       \
-    } while (0)
-
-#define PMIX_INFO_FREE(m, n)                        \
-    do {                                            \
-        size_t _is;                                 \
-        if (NULL != (m)) {                          \
-            for (_is=0; _is < (n); _is++) {         \
-                PMIX_INFO_DESTRUCT(&((m)[_is]));    \
-            }                                       \
-            pmix_free((m));                         \
-            (m) = NULL;                             \
-        }                                           \
-    } while (0)
-
-#define PMIX_INFO_LOAD(m, k, v, t)                          \
-    do {                                                    \
-        if (NULL != (k)) {                                  \
-            pmix_strncpy((char*)(m)->key, (k), PMIX_MAX_KEYLEN);   \
-        }                                                   \
-        (m)->flags = 0;                                     \
-        pmix_value_load(&((m)->value), (v), (t));           \
-    } while (0)
-#define PMIX_INFO_XFER(d, s)                                        \
-    do {                                                            \
-        if (NULL != (s)->key) {                                     \
-            pmix_strncpy((char*)(d)->key, (s)->key, PMIX_MAX_KEYLEN);      \
-        }                                                           \
-        (d)->flags = (s)->flags;                                    \
-        pmix_value_xfer(&(d)->value, (pmix_value_t*)&(s)->value);   \
-    } while(0)
-
-/* macros for constructing an array of pmix_info_t
- * on-the-fly, without knowing in advance the final
- * number of elements it will hold */
-
-/* Start a list of pmix_info_t
- * p - a void* pointer */
-#define PMIX_INFO_LIST_START(p)    \
-    (p) = pmix_info_list_start()
-
-/* Add a pmix_info_t to the list
- * r - a returned pmix_status_t
- * p - the void* pointer provided from PMIX_INFO_LIST_START
- * a - an attribute key
- * v - pointer to the value to be stored
- * t - the PMIx data type of the value */
-#define PMIX_INFO_LIST_ADD(r, p, a, v, t)     \
-    (r) = pmix_info_list_add((p), (a), (v), (t))
-
-/* Transfer a pmix_info_t to the list
- * r - a returned pmix_status_t
- * p - the void* pointer provided from PMIX_INFO_LIST_START
- * a - pointer to the pmix_info_t whose values are to be transferred
- */
-#define PMIX_INFO_LIST_XFER(r, p, a)     \
-    (r) = pmix_info_list_xfer((p), (a))
-
-/* Convert a list of pmix_info_t into an array of pmix_info_t
- * r - a returned pmix_status_t. PMIX_ERR_EMPTY if list was empty,
- *     otherwise either success or error constant
- * p - the void* pointer provided from PMIX_INFO_LIST_START
- * m - address of a pmix_data_array_t into which
- *     the array of info is to be placed */
-#define PMIX_INFO_LIST_CONVERT(r, p, m)                 \
-    do {                                                \
-        (m)->type = PMIX_INFO;                          \
-        (r) = pmix_info_list_convert((p), (m));         \
-        if (PMIX_SUCCESS != (r)) {                      \
-            (m)->array = NULL;                          \
-            (m)->size = 0;                              \
-        }                                               \
-    } while(0)
-
-/* Release any memory associated with the list
- * p - the void* pointer provided from PMIX_INFO_LIST_START */
-#define PMIX_INFO_LIST_RELEASE(p) \
-    pmix_info_list_release((p))
-
-
-/* macros for setting and unsetting the "reqd" flag
- * in a pmix_info_t */
-#define PMIX_INFO_REQUIRED(m)       \
-    ((m)->flags |= PMIX_INFO_REQD)
-#define PMIX_INFO_OPTIONAL(m)       \
-    ((m)->flags &= ~PMIX_INFO_REQD)
-
-/* macros for testing the "reqd" flag in a pmix_info_t */
-#define PMIX_INFO_IS_REQUIRED(m)    \
-    ((m)->flags & PMIX_INFO_REQD)
-#define PMIX_INFO_IS_OPTIONAL(m)    \
-    !((m)->flags & PMIX_INFO_REQD)
-
-/* macros for setting and testing the "reqd processed" flag */
-#define PMIX_INFO_WAS_PROCESSED(m)  \
-    ((m)->flags |= PMIX_INFO_REQD_PROCESSED)
-#define PMIX_INFO_PROCESSED(m)  \
-    ((m)->flags & PMIX_INFO_REQD_PROCESSED)
-
-/* macro for testing end of the array */
-#define PMIX_INFO_IS_END(m)         \
-    ((m)->flags & PMIX_INFO_ARRAY_END)
-
-/* define a special macro for checking if a boolean
- * info is true - when info structs are provided, a
- * type of PMIX_UNDEF is taken to imply a boolean "true"
- * as the presence of the key defaults to indicating
- * "true" */
-#define PMIX_INFO_TRUE(m)   \
-    (PMIX_UNDEF == (m)->value.type || (PMIX_BOOL == (m)->value.type && (m)->value.data.flag)) ? true : false
+typedef enum {
+    PMIX_BOOL_TRUE,
+    PMIX_BOOL_FALSE,
+    PMIX_NON_BOOL
+} pmix_boolean_t;
 
 
 /****    PMIX LOOKUP RETURN STRUCT    ****/
@@ -2878,64 +2317,6 @@ typedef struct pmix_pdata {
     .value = PMIX_VALUE_STATIC_INIT \
 }
 
-/* utility macros for working with pmix_pdata_t structs */
-#define PMIX_PDATA_CREATE(m, n)                                 \
-    do {                                                        \
-        (m) = (pmix_pdata_t*)pmix_calloc((n), sizeof(pmix_pdata_t)); \
-    } while (0)
-
-#define PMIX_PDATA_RELEASE(m)                   \
-    do {                                        \
-        PMIX_VALUE_DESTRUCT(&(m)->value);       \
-        pmix_free((m));                              \
-        (m) = NULL;                             \
-    } while (0)
-
-#define PMIX_PDATA_CONSTRUCT(m)                 \
-    do {                                        \
-        memset((m), 0, sizeof(pmix_pdata_t));   \
-        (m)->value.type = PMIX_UNDEF;           \
-    } while (0)
-
-#define PMIX_PDATA_DESTRUCT(m)                  \
-    do {                                        \
-        PMIX_VALUE_DESTRUCT(&(m)->value);       \
-    } while (0)
-
-#define PMIX_PDATA_FREE(m, n)                           \
-    do {                                                \
-        size_t _ps;                                     \
-        pmix_pdata_t *_pdf = (pmix_pdata_t*)(m);        \
-        if (NULL != _pdf) {                             \
-            for (_ps=0; _ps < (n); _ps++) {             \
-                PMIX_PDATA_DESTRUCT(&(_pdf[_ps]));      \
-            }                                           \
-            pmix_free((m));                                  \
-            (m) = NULL;                                 \
-        }                                               \
-    } while (0)
-
-#define PMIX_PDATA_LOAD(m, p, k, v, t)                                      \
-    do {                                                                    \
-        if (NULL != (m)) {                                                  \
-            memset((m), 0, sizeof(pmix_pdata_t));                           \
-            pmix_strncpy((char*)(m)->proc.nspace, (p)->nspace, PMIX_MAX_NSLEN);    \
-            (m)->proc.rank = (p)->rank;                                     \
-            pmix_strncpy((char*)(m)->key, (k), PMIX_MAX_KEYLEN);                   \
-            pmix_value_load(&((m)->value), (v), (t));                       \
-        }                                                                   \
-    } while (0)
-
-#define PMIX_PDATA_XFER(d, s)                                                   \
-    do {                                                                        \
-        if (NULL != (d)) {                                                      \
-            memset((d), 0, sizeof(pmix_pdata_t));                               \
-            pmix_strncpy((char*)(d)->proc.nspace, (s)->proc.nspace, PMIX_MAX_NSLEN);   \
-            (d)->proc.rank = (s)->proc.rank;                                    \
-            pmix_strncpy((char*)(d)->key, (s)->key, PMIX_MAX_KEYLEN);                  \
-            pmix_value_xfer(&((d)->value), &((s)->value));                      \
-        }                                                                       \
-    } while (0)
 
 
 /****    PMIX APP STRUCT    ****/
@@ -2960,74 +2341,6 @@ typedef struct pmix_app {
     .ninfo = 0                  \
 }
 
-/* utility macros for working with pmix_app_t structs */
-#define PMIX_APP_CREATE(m, n)                                   \
-    do {                                                        \
-        (m) = (pmix_app_t*)pmix_calloc((n), sizeof(pmix_app_t));     \
-    } while (0)
-
-#define PMIX_APP_INFO_CREATE(m, n)                  \
-    do {                                            \
-        (m)->ninfo = (n);                           \
-        PMIX_INFO_CREATE((m)->info, (m)->ninfo);    \
-    } while(0)
-
-#define PMIX_APP_RELEASE(m)                     \
-    do {                                        \
-        PMIX_APP_DESTRUCT((m));                 \
-        pmix_free((m));                              \
-        (m) = NULL;                             \
-    } while (0)
-
-#define PMIX_APP_CONSTRUCT(m)                   \
-    do {                                        \
-        memset((m), 0, sizeof(pmix_app_t));     \
-    } while (0)
-
-#define PMIX_APP_DESTRUCT(m)                                    \
-    do {                                                        \
-        size_t _aii;                                            \
-        if (NULL != (m)->cmd) {                                 \
-            pmix_free((m)->cmd);                                     \
-            (m)->cmd = NULL;                                    \
-        }                                                       \
-        if (NULL != (m)->argv) {                                \
-            for (_aii=0; NULL != (m)->argv[_aii]; _aii++) {     \
-                pmix_free((m)->argv[_aii]);                          \
-            }                                                   \
-            pmix_free((m)->argv);                                    \
-            (m)->argv = NULL;                                   \
-        }                                                       \
-        if (NULL != (m)->env) {                                 \
-            for (_aii=0; NULL != (m)->env[_aii]; _aii++) {      \
-                pmix_free((m)->env[_aii]);                           \
-            }                                                   \
-            pmix_free((m)->env);                                     \
-            (m)->env = NULL;                                    \
-        }                                                       \
-        if (NULL != (m)->cwd) {                                 \
-            pmix_free((m)->cwd);                                     \
-            (m)->cwd = NULL;                                    \
-        }                                                       \
-        if (NULL != (m)->info) {                                \
-            PMIX_INFO_FREE((m)->info, (m)->ninfo);              \
-            (m)->info = NULL;                                   \
-            (m)->ninfo = 0;                                     \
-        }                                                       \
-    } while (0)
-
-#define PMIX_APP_FREE(m, n)                     \
-    do {                                        \
-        size_t _as;                             \
-        if (NULL != (m)) {                      \
-            for (_as=0; _as < (n); _as++) {     \
-                PMIX_APP_DESTRUCT(&((m)[_as])); \
-            }                                   \
-            pmix_free((m));                          \
-            (m) = NULL;                         \
-        }                                       \
-    } while (0)
-
 
 /****    PMIX QUERY STRUCT    ****/
 typedef struct pmix_query {
@@ -3043,58 +2356,6 @@ typedef struct pmix_query {
     .nqual = 0                  \
 }
 
-/* utility macros for working with pmix_query_t structs */
-#define PMIX_QUERY_CREATE(m, n)                                     \
-    do {                                                            \
-        (m) = (pmix_query_t*)pmix_calloc((n) , sizeof(pmix_query_t));    \
-    } while (0)
-
-#define PMIX_QUERY_QUALIFIERS_CREATE(m, n)                  \
-    do {                                                    \
-        (m)->nqual = (n);                                   \
-        PMIX_INFO_CREATE((m)->qualifiers, (m)->nqual);      \
-    } while(0)
-
-#define PMIX_QUERY_RELEASE(m)       \
-    do {                            \
-        PMIX_QUERY_DESTRUCT((m));   \
-        pmix_free((m));                  \
-        (m) = NULL;                 \
-    } while (0)
-
-#define PMIX_QUERY_CONSTRUCT(m)                 \
-    do {                                        \
-        memset((m), 0, sizeof(pmix_query_t));   \
-    } while (0)
-
-#define PMIX_QUERY_DESTRUCT(m)                                  \
-    do {                                                        \
-        size_t _qi;                                             \
-        if (NULL != (m)->keys) {                                \
-            for (_qi=0; NULL != (m)->keys[_qi]; _qi++) {        \
-                pmix_free((m)->keys[_qi]);                           \
-            }                                                   \
-            pmix_free((m)->keys);                                    \
-            (m)->keys = NULL;                                   \
-        }                                                       \
-        if (NULL != (m)->qualifiers) {                          \
-            PMIX_INFO_FREE((m)->qualifiers, (m)->nqual);        \
-            (m)->qualifiers = NULL;                             \
-            (m)->nqual = 0;                                     \
-        }                                                       \
-    } while (0)
-
-#define PMIX_QUERY_FREE(m, n)                       \
-    do {                                            \
-        size_t _qs;                                 \
-        if (NULL != (m)) {                          \
-            for (_qs=0; _qs < (n); _qs++) {         \
-                PMIX_QUERY_DESTRUCT(&((m)[_qs]));   \
-            }                                       \
-            pmix_free((m));                              \
-            (m) = NULL;                             \
-        }                                           \
-    } while (0)
 
 /****    ATTRIBUTE REGISTRATION STRUCT   ****/
 typedef struct pmix_regattr_t {
@@ -3111,74 +2372,6 @@ typedef struct pmix_regattr_t {
     .type = PMIX_UNDEF,             \
     .description = NULL             \
 }
-
-#define PMIX_REGATTR_CONSTRUCT(a)                       \
-    do {                                                \
-        if (NULL != (a)) {                              \
-            (a)->name = NULL;                           \
-            memset((a)->string, 0, PMIX_MAX_KEYLEN+1);  \
-            (a)->type = PMIX_UNDEF;                     \
-            (a)->description = NULL;                    \
-        }                                               \
-    } while(0)
-
-#define PMIX_REGATTR_LOAD(a, n, k, t, v)                        \
-    do {                                                        \
-        pmix_status_t _rgl;                                     \
-        if (NULL != (n)) {                                      \
-            (a)->name = strdup((n));                            \
-        }                                                       \
-        if (NULL != (k)) {                                      \
-            PMIX_LOAD_KEY((a)->string, (k));                    \
-        }                                                       \
-        (a)->type = (t);                                        \
-        if (NULL != (v)) {                                      \
-            PMIX_ARGV_APPEND(_rgl, &(a)->description, (v));     \
-        }                                                       \
-    } while(0)
-
-#define PMIX_REGATTR_DESTRUCT(a)                    \
-    do {                                            \
-        if (NULL != (a)) {                          \
-            if (NULL != (a)->name) {                \
-                pmix_free((a)->name);                    \
-            }                                       \
-            if (NULL != (a)->description) {         \
-                PMIX_ARGV_FREE((a)->description);   \
-            }                                       \
-        }                                           \
-    } while(0)
-
-#define PMIX_REGATTR_CREATE(m, n)                                       \
-    do {                                                                \
-        (m) = (pmix_regattr_t*)pmix_calloc((n) , sizeof(pmix_regattr_t));    \
-    } while (0)
-
-#define PMIX_REGATTR_FREE(m, n)                         \
-    do {                                                \
-        size_t _ra;                                     \
-        if (NULL != (m)) {                              \
-            for (_ra=0; _ra < (n); _ra++) {             \
-                PMIX_REGATTR_DESTRUCT(&((m)[_ra]));     \
-            }                                           \
-            pmix_free((m));                                  \
-            (m) = NULL;                                 \
-        }                                               \
-    } while (0)
-
-#define PMIX_REGATTR_XFER(a, b)                                         \
-    do {                                                                \
-        size_t _n;                                                      \
-        PMIX_REGATTR_CONSTRUCT((a));                                    \
-        if (NULL != ((b)->name)) {                                      \
-            (a)->name = strdup((b)->name);                              \
-        }                                                               \
-        PMIX_LOAD_KEY((a)->string, (b)->string);                        \
-        (a)->type = (b)->type;                                          \
-        if (NULL != (b)->description) {                                 \
-            PMIX_ARGV_COPY((a)->description, (b)->description);         \
-        }                                                               \
-    } while(0)
 
 
 /****    FABRIC STRUCT    ****/
@@ -3214,152 +2407,6 @@ typedef enum {
     PMIX_FABRIC_REQUEST_INFO,
     PMIX_FABRIC_UPDATE_INFO
 } pmix_fabric_operation_t;
-
-/****    GENERIC HELPER MACROS    ****/
-
-/* Append a string (by value) to an new or existing NULL-terminated
- * argv array.
- *
- * @param argv Pointer to an argv array.
- * @param str Pointer to the string to append.
- *
- * @retval PMIX_SUCCESS On success
- * @retval PMIX_ERROR On failure
- *
- * This function adds a string to an argv array of strings by value;
- * it is permissable to pass a string on the stack as the str
- * argument to this function.
- *
- * To add the first entry to an argv array, call this function with
- * (*argv == NULL).  This function will allocate an array of length
- * 2; the first entry will point to a copy of the string passed in
- * arg, the second entry will be set to NULL.
- *
- * If (*argv != NULL), it will be realloc'ed to be 1 (char*) larger,
- * and the next-to-last entry will point to a copy of the string
- * passed in arg.  The last entry will be set to NULL.
- *
- * Just to reinforce what was stated above: the string is copied by
- * value into the argv array; there is no need to keep the original
- * string (i.e., the arg parameter) after invoking this function.
- */
-#define PMIX_ARGV_APPEND(r, a, b) \
-    (r) = pmix_argv_append_nosize(&(a), (b))
-
-/* Prepend a string to a new or existing NULL-terminated
- * argv array - same as above only prepend
- */
-#define PMIX_ARGV_PREPEND(r, a, b) \
-    (r) = pmix_argv_prepend_nosize(&(a), b)
-
-/* Append to an argv-style array, but only if the provided argument
- * doesn't already exist somewhere in the array. Ignore the size of the array.
- *
- * @param argv Pointer to an argv array.
- * @param str Pointer to the string to append.
- *
- * @retval PMIX_SUCCESS On success
- * @retval PMIX_ERROR On failure
- *
- * This function is identical to the pmix_argv_append_nosize() function
- * except that it only appends the provided argument if it does not already
- * exist in the provided array.
- */
-#define PMIX_ARGV_APPEND_UNIQUE(r, a, b) \
-    (r) = pmix_argv_append_unique_nosize(a, b)
-
-/* Free a NULL-terminated argv array.
- *
- * @param argv Argv array to free.
- *
- * This function frees an argv array and all of the strings that it
- * contains.  Since the argv parameter is passed by value, it is not
- * set to NULL in the caller's scope upon return.
- *
- * It is safe to invoke this function with a NULL pointer.  It is
- * not safe to invoke this function with a non-NULL-terminated argv
- * array.
- */
-#define PMIX_ARGV_FREE(a)  pmix_argv_free(a)
-
-/*
- * Split a string into a NULL-terminated argv array. Do not include empty
- * strings in result array.
- *
- * @param src_string Input string.
- * @param delimiter Delimiter character.
- *
- * @retval argv pointer to new argv array on success
- * @retval NULL on error
- *
- * All strings are inserted into the argv array by value; the
- * newly-allocated array makes no references to the src_string
- * argument (i.e., it can be freed after calling this function
- * without invalidating the output argv).
- */
-#define PMIX_ARGV_SPLIT(a, b, c) \
-    (a) = pmix_argv_split(b, c)
-
-/*
- * Return the length of a NULL-terminated argv array.
- *
- * @param argv The input argv array.
- *
- * @retval 0 If NULL is passed as argv.
- * @retval count Number of entries in the argv array.
- *
- * The argv array must be NULL-terminated.
- */
-#define PMIX_ARGV_COUNT(r, a) \
-    (r) = pmix_argv_count(a)
-
-/*
- * Join all the elements of an argv array into a single
- * newly-allocated string.
- *
- * @param argv The input argv array.
- * @param delimiter Delimiter character placed between each argv string.
- *
- * @retval new_string Output string on success.
- * @retval NULL On failure.
- *
- * Similar to the Perl join function, this function takes an input
- * argv and joins them into into a single string separated by the
- * delimiter character.
- *
- * It is the callers responsibility to free the returned string.
- */
-#define PMIX_ARGV_JOIN(a, b, c) \
-    (a) = pmix_argv_join(b, c)
-
-/*
- * Copy a NULL-terminated argv array.
- *
- * @param argv The input argv array.
- *
- * @retval argv Copied argv array on success.
- * @retval NULL On failure.
- *
- * Copy an argv array, including copying all off its strings.
- * Specifically, the output argv will be an array of the same length
- * as the input argv, and strcmp(argv_in[i], argv_out[i]) will be 0.
- */
-#define PMIX_ARGV_COPY(a, b) \
-    (a) = pmix_argv_copy(b)
-
-/*
- * Set an environmenal paramter in an env array
- *
- * @retval r Return pmix_status_t status
- *
- * @param a Name of the environmental param
- *
- * @param b String value of the environmental param
- *
- * @param c Address of the NULL-terminated env array
- */
-#define PMIX_SETENV(r, a, b, c) \
-    (r) = pmix_setenv((a), (b), true, (c))
 
 
 /****    CALLBACK FUNCTIONS FOR NON-BLOCKING OPERATIONS    ****/
@@ -3596,307 +2643,8 @@ typedef void (*pmix_device_dist_cbfunc_t)(pmix_status_t status,
                                           void *release_cbdata);
 
 
-/********    STANDARD MACROS FOR DARRAY AND VALUE SUPPORT     ********/
-static inline void pmix_darray_destruct(pmix_data_array_t *m);
 
-static inline void pmix_value_destruct(pmix_value_t * m)
-{
-    if (PMIX_STRING == (m)->type) {
-        if (NULL != (m)->data.string) {
-            pmix_free((m)->data.string);
-            (m)->data.string = NULL;
-        }
-    } else if ((PMIX_BYTE_OBJECT == (m)->type) ||
-               (PMIX_COMPRESSED_STRING == (m)->type)) {
-        if (NULL != (m)->data.bo.bytes) {
-            pmix_free((m)->data.bo.bytes);
-            (m)->data.bo.bytes = NULL;
-            (m)->data.bo.size = 0;
-        }
-    } else if (PMIX_DATA_ARRAY == (m)->type) {
-        if (NULL != (m)->data.darray) {
-            pmix_darray_destruct((m)->data.darray);
-            pmix_free((m)->data.darray);
-            (m)->data.darray = NULL;
-        }
-    } else if (PMIX_ENVAR == (m)->type) {
-        PMIX_ENVAR_DESTRUCT(&(m)->data.envar);
-    } else if (PMIX_PROC == (m)->type) {
-        PMIX_PROC_RELEASE((m)->data.proc);
-    }
-}
 
-static inline void pmix_darray_destruct(pmix_data_array_t *m)
-{
-    if (NULL != m) {
-        if (PMIX_INFO == m->type) {
-            pmix_info_t *_info = (pmix_info_t*)m->array;
-            PMIX_INFO_FREE(_info, m->size);
-        } else if (PMIX_PROC == m->type) {
-            pmix_proc_t *_p = (pmix_proc_t*)m->array;
-            PMIX_PROC_FREE(_p, m->size);
-        } else if (PMIX_PROC_INFO == m->type) {
-            pmix_proc_info_t *_pi = (pmix_proc_info_t*)m->array;
-            PMIX_PROC_INFO_FREE(_pi, m->size);
-        } else if (PMIX_ENVAR == m->type) {
-            pmix_envar_t *_e = (pmix_envar_t*)m->array;
-            PMIX_ENVAR_FREE(_e, m->size);
-        } else if (PMIX_VALUE == m->type) {
-            pmix_value_t *_v = (pmix_value_t*)m->array;
-            PMIX_VALUE_FREE(_v, m->size);
-        } else if (PMIX_PDATA == m->type) {
-            pmix_pdata_t *_pd = (pmix_pdata_t*)m->array;
-            PMIX_PDATA_FREE(_pd, m->size);
-        } else if (PMIX_QUERY == m->type) {
-            pmix_query_t *_q = (pmix_query_t*)m->array;
-            PMIX_QUERY_FREE(_q, m->size);
-        } else if (PMIX_APP == m->type) {
-            pmix_app_t *_a = (pmix_app_t*)m->array;
-            PMIX_APP_FREE(_a, m->size);
-        } else if (PMIX_BYTE_OBJECT == m->type ||
-                   PMIX_COMPRESSED_STRING == m->type) {
-            pmix_byte_object_t *_b = (pmix_byte_object_t*)m->array;
-            PMIX_BYTE_OBJECT_FREE(_b, m->size);
-        } else if (PMIX_STRING == m->type) {
-            char **_s = (char**)m->array;
-            size_t _si;
-            for (_si=0; _si < m->size; _si++) {
-                pmix_free(_s[_si]);
-            }
-            pmix_free(m->array);
-            m->array = NULL;
-        } else {
-            pmix_free(m->array);
-        }
-    }
-}
-
-#define PMIX_DATA_ARRAY_INIT(m, t)      \
-    do {                                \
-        (m)->array = NULL;              \
-        (m)->type = (t);                \
-        (m)->size = 0;                  \
-    } while(0)
-
-#define PMIX_DATA_ARRAY_CONSTRUCT(m, n, t)                          \
-    do {                                                            \
-        (m)->type = (t);                                            \
-        (m)->size = (n);                                            \
-        if (0 < (n)) {                                              \
-            if (PMIX_INFO == (t)) {                                 \
-                PMIX_INFO_CREATE((m)->array, (n));                  \
-                                                                    \
-            } else if (PMIX_PROC == (t)) {                          \
-                PMIX_PROC_CREATE((m)->array, (n));                  \
-                                                                    \
-            } else if (PMIX_PROC_INFO == (t)) {                     \
-                PMIX_PROC_INFO_CREATE((m)->array, (n));             \
-                                                                    \
-            } else if (PMIX_ENVAR == (t)) {                         \
-                PMIX_ENVAR_CREATE((m)->array, (n));                 \
-                                                                    \
-            } else if (PMIX_VALUE == (t)) {                         \
-                PMIX_VALUE_CREATE((m)->array, (n));                 \
-                                                                    \
-            } else if (PMIX_PDATA == (t)) {                         \
-                PMIX_PDATA_CREATE((m)->array, (n));                 \
-                                                                    \
-            } else if (PMIX_QUERY == (t)) {                         \
-                PMIX_QUERY_CREATE((m)->array, (n));                 \
-                                                                    \
-            } else if (PMIX_APP == (t)) {                           \
-                PMIX_APP_CREATE((m)->array, (n));                   \
-                                                                    \
-            } else if (PMIX_BYTE_OBJECT == (t) ||                   \
-                       PMIX_COMPRESSED_STRING == (t)) {             \
-                PMIX_BYTE_OBJECT_CREATE((m)->array, (n));           \
-                                                                    \
-            } else if (PMIX_ALLOC_DIRECTIVE == (t) ||               \
-                       PMIX_PROC_STATE == (t) ||                    \
-                       PMIX_PERSIST == (t) ||                       \
-                       PMIX_SCOPE == (t) ||                         \
-                       PMIX_DATA_RANGE == (t) ||                    \
-                       PMIX_BYTE == (t) ||                          \
-                       PMIX_INT8 == (t) ||                          \
-                       PMIX_UINT8 == (t) ||                         \
-                       PMIX_POINTER == (t)) {                       \
-                (m)->array = pmix_calloc((n), sizeof(int8_t));           \
-                                                                    \
-            } else if (PMIX_STRING == (t)) {                        \
-                (m)->array = pmix_calloc((n), sizeof(char*));            \
-                                                                    \
-            } else if (PMIX_SIZE == (t)) {                          \
-                (m)->array = pmix_calloc((n), sizeof(size_t));           \
-                                                                    \
-            } else if (PMIX_PID == (t)) {                           \
-                (m)->array = pmix_calloc((n), sizeof(pid_t));            \
-                                                                    \
-            } else if (PMIX_INT == (t) ||                           \
-                       PMIX_UINT == (t) ||                          \
-                       PMIX_STATUS == (t)) {                        \
-                (m)->array = pmix_calloc((n), sizeof(int));              \
-                                                                    \
-            } else if (PMIX_IOF_CHANNEL == (t) ||                   \
-                       PMIX_DATA_TYPE == (t) ||                     \
-                       PMIX_INT16 == (t) ||                         \
-                       PMIX_UINT16 == (t)) {                        \
-                (m)->array = pmix_calloc((n), sizeof(int16_t));          \
-                                                                    \
-            } else if (PMIX_PROC_RANK == (t) ||                     \
-                       PMIX_INFO_DIRECTIVES == (t) ||               \
-                       PMIX_INT32 == (t) ||                         \
-                       PMIX_UINT32 == (t)) {                        \
-                (m)->array = pmix_calloc((n), sizeof(int32_t));          \
-                                                                    \
-            } else if (PMIX_INT64 == (t) ||                         \
-                       PMIX_UINT64 == (t)) {                        \
-                (m)->array = pmix_calloc((n), sizeof(int64_t));          \
-                                                                    \
-            } else if (PMIX_FLOAT == (t)) {                         \
-                (m)->array = pmix_calloc((n), sizeof(float));            \
-                                                                    \
-            } else if (PMIX_DOUBLE == (t)) {                        \
-                (m)->array = pmix_calloc((n), sizeof(double));           \
-                                                                    \
-            } else if (PMIX_TIMEVAL == (t)) {                       \
-                (m)->array = pmix_calloc((n), sizeof(struct timeval));   \
-                                                                    \
-            } else if (PMIX_TIME == (t)) {                          \
-                (m)->array = pmix_calloc((n), sizeof(time_t));           \
-                                                                    \
-            } else if (PMIX_REGATTR == (t)) {                       \
-                PMIX_REGATTR_CREATE((m)->array, (n));               \
-                                                                    \
-            } else if (PMIX_BOOL == (t)) {                          \
-                (m)->array = pmix_calloc((n), sizeof(bool));             \
-                                                                    \
-            } else if (PMIX_COORD == (t)) {                         \
-                (m)->array = pmix_calloc((n), sizeof(pmix_coord_t));  \
-                                                                    \
-            } else if (PMIX_LINK_STATE == (t)) {                    \
-                (m)->array = pmix_calloc((n), sizeof(pmix_link_state_t));  \
-                                                                    \
-            } else if (PMIX_ENDPOINT == (t)) {                         \
-                PMIX_ENDPOINT_CREATE((m)->array, n);                   \
-                                                                    \
-            } else if (PMIX_PROC_NSPACE == (t)) {                         \
-                (m)->array = pmix_calloc((n), sizeof(pmix_nspace_t));     \
-                                                                    \
-            } else if (PMIX_PROC_STATS == (t)) {                         \
-                PMIX_PROC_STATS_CREATE((m)->array, n);                   \
-                                                                    \
-            } else if (PMIX_DISK_STATS == (t)) {                         \
-                PMIX_DISK_STATS_CREATE((m)->array, n);                   \
-                                                                    \
-            } else if (PMIX_NET_STATS == (t)) {                         \
-                PMIX_NET_STATS_CREATE((m)->array, n);                   \
-                                                                    \
-            } else if (PMIX_NODE_STATS == (t)) {                         \
-                PMIX_NODE_STATS_CREATE((m)->array, n);                   \
-                                                                    \
-            } else if (PMIX_DEVICE_DIST == (t)) {                         \
-                PMIX_DEVICE_DIST_CREATE((m)->array, n);                   \
-                                                                    \
-            } else if (PMIX_GEOMETRY == (t)) {                         \
-                PMIX_GEOMETRY_CREATE((m)->array, n);                   \
-                                                                    \
-            } else if (PMIX_REGATTR == (t)) {                         \
-                PMIX_REGATTR_CREATE((m)->array, n);                   \
-                                                                    \
-            } else if (PMIX_PROC_CPUSET == (t)) {                         \
-                PMIX_CPUSET_CREATE((m)->array, n);                   \
-            } else {                                                \
-                (m)->array = NULL;                                  \
-                (m)->size = 0;                                      \
-            }                                                       \
-        } else {                                                    \
-            (m)->array = NULL;                                      \
-        }                                                           \
-    } while(0)
-#define PMIX_DATA_ARRAY_CREATE(m, n, t)                                         \
-    do {                                                                        \
-        (m) = (pmix_data_array_t*)pmix_calloc(1, sizeof(pmix_data_array_t));    \
-        if (NULL != (m)) {                                                      \
-            PMIX_DATA_ARRAY_CONSTRUCT((m), (n), (t));                           \
-        }                                                                       \
-    } while(0)
-
-#define PMIX_DATA_ARRAY_DESTRUCT(m) pmix_darray_destruct(m)
-
-#define PMIX_DATA_ARRAY_FREE(m)             \
-    do {                                    \
-        if (NULL != (m)) {                  \
-            PMIX_DATA_ARRAY_DESTRUCT(m);    \
-            pmix_free((m));                      \
-            (m) = NULL;                     \
-        }                                   \
-    } while(0)
-
-/**
- * Provide a safe version of strncpy that doesn't generate
- * a ton of spurious warnings. Note that not every environment
- * provides nice string functions, and we aren't concerned about
- * max performance here
- *
- * @param dest Destination string.
- * @param src Source string.
- * @param len Size of the dest array - 1
- *
- */
-static inline void pmix_strncpy(char *dest,
-                                const char *src,
-                                size_t len)
-{
-    size_t i;
-
-    /* use an algorithm that also protects against
-     * non-NULL-terminated src strings */
-    for (i=0; i < len; ++i, ++src, ++dest) {
-        *dest = *src;
-        if ('\0' == *src) {
-            break;
-        }
-    }
-    *dest = '\0';
-}
-
-static inline size_t pmix_keylen(const char *src)
-{
-    size_t i, maxlen;
-
-    if (NULL == src) {
-        return 0;
-    }
-    maxlen = PMIX_MAX_KEYLEN + 1;
-    /* use an algorithm that also protects against
-     * non-NULL-terminated src strings */
-    for (i=0; i < maxlen; ++i, ++src) {
-        if ('\0' == *src) {
-            break;
-        }
-    }
-    return i;
-}
-
-static inline size_t pmix_nslen(const char *src)
-{
-    size_t i, maxlen;
-
-    if (NULL == src) {
-        return 0;
-    }
-    maxlen = PMIX_MAX_NSLEN + 1;
-    /* use an algorithm that also protects against
-     * non-NULL-terminated src strings */
-    for (i=0; i < maxlen; ++i, ++src) {
-        if ('\0' == *src) {
-            break;
-        }
-    }
-    return i;
-}
-
-#include <pmix_extend.h>
 #include <pmix_deprecated.h>
 
 #if defined(c_plusplus) || defined(__cplusplus)

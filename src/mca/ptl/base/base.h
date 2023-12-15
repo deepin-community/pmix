@@ -14,7 +14,8 @@
  * Copyright (c) 2014-2020 Intel, Inc.  All rights reserved.
  * Copyright (c) 2015-2020 Research Organization for Information Science
  *                         and Technology (RIST).  All rights reserved.
- * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2021-2023 Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2023      Triad National Security, LLC. All rights reserved.
  * $COPYRIGHT$
  *
  * Additional copyrights may follow
@@ -39,6 +40,7 @@
 #include "src/mca/mca.h"
 
 #include "src/include/pmix_globals.h"
+#include "src/include/pmix_stdatomic.h"
 #include "src/mca/ptl/base/ptl_base_handshake.h"
 #include "src/mca/ptl/ptl.h"
 
@@ -62,8 +64,6 @@ struct pmix_ptl_base_t {
     bool selected;
     pmix_list_t posted_recvs; // list of pmix_ptl_posted_recv_t
     pmix_list_t unexpected_msgs;
-    int stop_thread[2];
-    bool listen_thread_active;
     pmix_listener_t listener;
     struct sockaddr_storage *connection;
     uint32_t current_tag;
@@ -73,6 +73,7 @@ struct pmix_ptl_base_t {
     char *report_uri;
     char *uri;
     char *urifile;
+    char *scheduler_filename;
     char *system_filename;
     char *session_filename;
     char *nspace_filename;
@@ -81,6 +82,7 @@ struct pmix_ptl_base_t {
     bool created_rendezvous_file;
     bool created_session_tmpdir;
     bool created_system_tmpdir;
+    bool created_scheduler_filename;
     bool created_system_filename;
     bool created_session_filename;
     bool created_nspace_filename;
@@ -146,7 +148,7 @@ PMIX_EXPORT pmix_status_t pmix_ptl_base_recv_blocking(int sd, char *data, size_t
 PMIX_EXPORT pmix_status_t pmix_ptl_base_connect(struct sockaddr_storage *addr, pmix_socklen_t len,
                                                 int *fd);
 PMIX_EXPORT void pmix_ptl_base_connection_handler(int sd, short args, void *cbdata);
-PMIX_EXPORT pmix_status_t pmix_ptl_base_setup_listener(void);
+PMIX_EXPORT pmix_status_t pmix_ptl_base_setup_listener(pmix_info_t info[], size_t ninfo);
 PMIX_EXPORT pmix_status_t pmix_ptl_base_send_connect_ack(int sd);
 PMIX_EXPORT pmix_status_t pmix_ptl_base_recv_connect_ack(int sd);
 PMIX_EXPORT void pmix_ptl_base_lost_connection(pmix_peer_t *peer, pmix_status_t err);
@@ -170,7 +172,8 @@ PMIX_EXPORT pmix_status_t pmix_ptl_base_set_timeout(pmix_peer_t *peer, struct ti
 PMIX_EXPORT void pmix_ptl_base_setup_socket(pmix_peer_t *peer);
 PMIX_EXPORT pmix_status_t pmix_ptl_base_client_handshake(pmix_peer_t *peer, pmix_status_t reply);
 PMIX_EXPORT pmix_status_t pmix_ptl_base_tool_handshake(pmix_peer_t *peer, pmix_status_t rp);
-PMIX_EXPORT char **pmix_ptl_base_split_and_resolve(char **orig_str, char *name);
+PMIX_EXPORT char **pmix_ptl_base_split_and_resolve(const char *orig_str,
+                                                   const char *name);
 PMIX_EXPORT pmix_status_t pmix_ptl_base_connect_to_peer(struct pmix_peer_t *pr, pmix_info_t *info,
                                                         size_t ninfo);
 PMIX_EXPORT pmix_status_t pmix_ptl_base_set_peer(pmix_peer_t *peer, char *evar);
